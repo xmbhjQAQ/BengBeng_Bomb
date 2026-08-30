@@ -26,7 +26,7 @@ export function Settlement({
     url: result.reportUrl,
     video: challenge.video,
     heading: held ? '成功绷住！' : '绷不住了！',
-    lines: [held ? '整段视频都没有笑' : '坚持到了这一秒', `${result.elapsedSeconds.toFixed(1)} 秒`],
+    lines: [held ? '全程绷住，挑战成功' : '坚持到了这一秒', `${result.elapsedSeconds.toFixed(1)} 秒`],
     stats: result.stats,
   }), '绷绷炸弹-战报.png');
   const forward = () => {
@@ -41,7 +41,7 @@ export function Settlement({
         <p className="eyebrow">挑战完成</p>
         <h1>{held ? '你是真能绷' : '炸了！'}</h1>
         <div className="time-score"><strong>{result.elapsedSeconds.toFixed(1)}</strong><span>秒</span></div>
-        <p>{held ? '完整看完，一次都没笑。' : '这个瞬间击穿了你的防线。'}</p>
+        <p>{held ? '全程绷住，挑战成功。' : '这个瞬间击穿了你的防线。'}</p>
       </section>
       <ScoreTraceChart points={result.scoreTrace ?? []} outcome={result.outcome} durationSeconds={challenge.video.duration} />
       <Stats stats={result.stats} />
@@ -69,7 +69,7 @@ export function Stats({ stats }: { stats: AggregateStats }) {
       <h2>大家的挑战情况</h2>
       <div className="stats-grid">
         <div><strong>{stats.total}</strong><span>挑战次数</span></div>
-        <div><strong>{stats.held}</strong><span>完整看完</span></div>
+        <div><strong>{stats.held}</strong><span>绷住人数</span></div>
         <div><strong>{(stats.failureRate * 100).toFixed(0)}%</strong><span>没绷住比例</span></div>
         <div><strong>{stats.averageElapsedSeconds.toFixed(1)}s</strong><span>平均坚持时间</span></div>
       </div>

@@ -212,7 +212,7 @@ export function ChallengeView({ token }: { token: string }) {
           {opened.challenge.mode === 'self' ? '单人挑战' : opened.challenge.recipient ? `${opened.challenge.recipient}，接招吧` : '一枚绷绷炸弹'}
         </p>
         <h1>{opened.challenge.mode === 'self' ? '看看你能绷到第几秒' : `${opened.challenge.initiator ?? '朋友'} 挑战你`}</h1>
-        <p className="intro">{opened.challenge.message || '看完整段视频，全程不许笑。'}</p>
+        <p className="intro">{opened.challenge.message || '看看你能否绷住。'}</p>
       </header>
       {!active && <StageProgress stage={stage} />}
       <div className="challenge-stage">

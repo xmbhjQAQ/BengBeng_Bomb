@@ -24,7 +24,7 @@ function CompletedResult({ result }: { result: ManageResult }) {
       <h1>{outcome === 'held' ? '你是真能绷' : outcome === 'failed' ? '炸了！' : '挑战已完成'}</h1>
       {result.video?.title && <h2>{result.video.title}</h2>}
       {hasElapsed ? <div className="time-score"><strong>{result.elapsedSeconds!.toFixed(1)}</strong><span>秒</span></div> : <p>结果秒数暂不可用。</p>}
-      <p>{outcome === 'held' ? '完整看完，一次都没笑。' : outcome === 'failed' ? '这个瞬间击穿了你的防线。' : '结果记录完整，但结算状态缺少必要信息。'}</p>
+      <p>{outcome === 'held' ? '全程绷住，挑战成功。' : outcome === 'failed' ? '这个瞬间击穿了你的防线。' : '结果记录完整，但结算状态缺少必要信息。'}</p>
     </section>
     {hasVideo && chartOutcome ? <ScoreTraceChart points={result.scoreTrace ?? []} outcome={chartOutcome} durationSeconds={result.video!.duration} /> : (
       <section className="section score-trace-section"><h2>本次表情变化</h2><p className="muted score-trace-empty">这条结果的详细变化暂时不可用，但坚持时间仍可查看。</p></section>
