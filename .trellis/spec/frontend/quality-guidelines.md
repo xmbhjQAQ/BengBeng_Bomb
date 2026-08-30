@@ -193,3 +193,74 @@ sessionStorage.setItem('forward-video', url);
 history.pushState({}, '', '/');
 dispatchEvent(new PopStateEvent('popstate'));
 ```
+
+## Scenario: Private result detail rendering
+
+### 1. Scope / Trigger
+
+- Trigger: changing `ManageView` or the `ManageResult` response fields used to restore a completed private result.
+- Goal: the private entry is a truthful, refreshable settlement view with the same curve/heatmap language as the report, without exposing private challenge text or creating a second navigation flow.
+
+### 2. Signatures
+
+```ts
+interface ManageResult {
+  status: 'unopened' | 'opened' | 'started' | 'completed' | 'deleted' | 'expired';
+  outcome?: 'held' | 'failed';
+  elapsedSeconds?: number;
+  expiresAt?: number;
+  video?: VideoMetadata;
+  stats?: AggregateStats;
+  scoreTrace?: ScorePoint[];
+}
+```
+
+`ManageView` calls `POST /api/manage/result` with the `bm1` token from the URL fragment, then reuses `ScoreTraceChart` and `Stats`; it must not call the public report resolver or re-run challenge playback.
+
+### 3. Contracts
+
+- Completed live results render the outcome/seconds, stable video title, “本次表情变化” chart, and anonymous aggregate/heatmap when those fields validate.
+- A missing or malformed video/trace/stats field produces an explicit unavailable/empty state. The UI never invents a line, fake bar, or identity.
+- Expired/deleted/non-completed statuses render status only; private detail disappears after expiry or destroy.
+- The management token remains in the fragment and is sent only as an Authorization bearer; it is never rendered, copied into a share card, or put into a public URL.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Completed response with valid detail | Render chart and heatmap in the same private page |
+| Completed response missing detail | Keep seconds/outcome and show a truthful unavailable message |
+| Empty `scoreTrace` | Reuse chart empty state; do not draw a synthetic line |
+| Expired/deleted response | Do not render chart, heatmap, title or private settlement detail |
+| Manage request failure | Keep the page in place and show the normal error; do not navigate or retry automatically |
+
+### 5. Good/Base/Bad Cases
+
+- Good: click “刷新状态” → authorized completed payload → shared chart/stats components → destroy/expiry removes detail in place.
+- Base: old rows show a summary plus explicit missing-detail copy.
+- Bad: display only seconds when the backend has a trace, duplicate chart math in `ManageView`, or fall back to a client snapshot without the manage API response.
+
+### 6. Tests Required
+
+- `ManageView` tests assert completed trace/heatmap rendering, old-row degradation, and no detail for expired/deleted states.
+- Shared chart tests continue to cover empty/one/long traces and accessible point labels; `Stats` tests cover empty and bucketed heatmaps.
+- SPA tests assert the private route remains in place and no report/public navigation is introduced by refreshing or destroying the result.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```tsx
+// Only seconds are shown even though the authorized response contains detail.
+return <p>{result.elapsedSeconds} 秒</p>;
+```
+
+#### Correct
+
+```tsx
+return <>
+  <SettlementSummary result={result} />
+  <ScoreTraceChart points={result.scoreTrace ?? []} outcome={result.outcome!} durationSeconds={result.video!.duration} />
+  <Stats stats={result.stats!} />
+</>;
+```

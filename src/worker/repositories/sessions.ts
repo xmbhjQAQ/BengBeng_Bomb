@@ -1,6 +1,7 @@
-import { decodeScoreTrace, type AggregateStats, type LeaderboardEntry, type Outcome, type ScorePoint, type VideoMetadata } from '../../shared/contracts';
+import { decodeScoreTrace, decodeVideoMetadata, type AggregateStats, type LeaderboardEntry, type Outcome, type ScorePoint, type VideoMetadata } from '../../shared/contracts';
 
 export interface SessionRow { challenge_id: string; video_key: string; state: 'opened'|'started'|'completed'; expires_at:number; opened_at: number; started_at: number|null; completed_at: number|null; result_expires_at: number|null; outcome: Outcome|null; failed_at_seconds: number|null; duration_seconds: number }
+interface VideoCatalogRow { bvid: string; cid: number; page: number; title: string; cover: string; duration_seconds: number }
 export class SessionRepository {
   constructor(private readonly db: D1Database) {}
   async open(input: { id: string; videoKey: string; createdAt: number; expiresAt: number; now: number; duration: number }) {
@@ -11,6 +12,24 @@ export class SessionRepository {
     await this.db.prepare(`INSERT INTO video_catalog(video_key,bvid,cid,page,title,cover,duration_seconds,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(video_key) DO UPDATE SET bvid=excluded.bvid,cid=excluded.cid,page=excluded.page,title=excluded.title,cover=excluded.cover,duration_seconds=excluded.duration_seconds,updated_at=excluded.updated_at`).bind(videoKey,video.bvid,video.cid,video.page,video.title,video.cover,video.duration,now).run();
   }
   async get(id: string) { return (await this.db.prepare('SELECT challenge_id,video_key,state,expires_at,opened_at,started_at,completed_at,result_expires_at,outcome,failed_at_seconds,duration_seconds FROM challenge_sessions WHERE challenge_id=?').bind(id).first<SessionRow>()) ?? null; }
+  async videoMetadata(videoKey: string): Promise<VideoMetadata | null> {
+    const row = await this.db.prepare('SELECT bvid,cid,page,title,cover,duration_seconds FROM video_catalog WHERE video_key=?').bind(videoKey).first<VideoCatalogRow>();
+    if (!row) return null;
+    try {
+      return decodeVideoMetadata({
+        source: 'bilibili',
+        bvid: row.bvid,
+        cid: row.cid,
+        page: row.page,
+        title: row.title,
+        description: '',
+        cover: row.cover,
+        duration: row.duration_seconds,
+      });
+    } catch {
+      return null;
+    }
+  }
   async start(id: string, attemptHash: string, now: number) {
     const result = await this.db.prepare(`UPDATE challenge_sessions SET state='started',started_at=?,attempt_token_hash=? WHERE challenge_id=? AND state='opened'`).bind(now,attemptHash,id).run();
     return result.meta.changes === 1;
@@ -28,14 +47,14 @@ export class SessionRepository {
     return { status: 'completed' as const, row: await this.get(input.id) };
   }
   async stats(videoKey: string): Promise<AggregateStats> { const row = await this.db.prepare('SELECT total,held,failed,cumulative_elapsed_seconds FROM video_stats WHERE video_key=?').bind(videoKey).first<{total:number;held:number;failed:number;cumulative_elapsed_seconds:number}>(); const buckets = await this.db.prepare('SELECT bucket_start_seconds AS "startSeconds", count FROM video_fail_buckets WHERE video_key=? ORDER BY bucket_start_seconds').bind(videoKey).all<{startSeconds:number;count:number}>(); const total=row?.total??0, failed=row?.failed??0; return { total, held: row?.held??0, failed, failureRate: total ? failed/total : 0, averageElapsedSeconds: total ? (row?.cumulative_elapsed_seconds??0)/total : 0, buckets: buckets.results }; }
-  async scoreTrace(id: string, now: number): Promise<ScorePoint[]> {
+  async scoreTrace(id: string, now: number, durationSeconds = Number.POSITIVE_INFINITY): Promise<ScorePoint[]> {
     const row = await this.db.prepare('SELECT points_json,expires_at FROM challenge_score_traces WHERE challenge_id=?').bind(id).first<{points_json:string;expires_at:number}>();
     if (!row) return [];
     if (row.expires_at <= now) {
       await this.db.prepare('DELETE FROM challenge_score_traces WHERE challenge_id=?').bind(id).run();
       return [];
     }
-    try { return decodeScoreTrace(JSON.parse(row.points_json), Number.POSITIVE_INFINITY); } catch { return []; }
+    try { return decodeScoreTrace(JSON.parse(row.points_json), durationSeconds); } catch { return []; }
   }
   async leaderboard(minimumAttempts: number, limit: number): Promise<LeaderboardEntry[]> {
     const query = `SELECT s.video_key,c.bvid,c.cid,c.page,c.title,c.cover,c.duration_seconds,s.total,s.held,s.failed,s.cumulative_elapsed_seconds,s.last_completed_at,

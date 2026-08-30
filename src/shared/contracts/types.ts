@@ -27,6 +27,14 @@ export interface AggregateStats {
 export interface ManageResult {
   status: 'unopened' | 'opened' | 'started' | 'completed' | 'deleted' | 'expired';
   outcome?: Outcome; elapsedSeconds?: number; expiresAt?: number;
+  /**
+   * Completed private results include only stable video metadata plus the
+   * bounded, quantized result projections.  They deliberately omit the
+   * challenge payload (initiator, recipient and message).
+   */
+  video?: VideoMetadata;
+  stats?: AggregateStats;
+  scoreTrace?: ScorePoint[];
 }
 export interface LeaderboardEntry {
   rank: number;

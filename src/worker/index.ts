@@ -65,7 +65,20 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const reportPayload:ReportPayload={v:1,kind:'report',video:payload.video,outcome:row.outcome,elapsedSeconds:row.outcome==='held'?payload.video.duration:Number(row.failed_at_seconds??0),issuedAt:now,expiresAt:Number(row.result_expires_at??expiresAt),nonce:randomToken(12),resultRef:id,mode:payload.mode}; const reportToken=await issueReport(reportPayload,env.APP_SIGNING_SECRET); return json({outcome:reportPayload.outcome,elapsedSeconds:reportPayload.elapsedSeconds,reportUrl:`${publicOrigin(request)}/report/${encodeURIComponent(reportToken)}`,reportToken,stats:await repo.stats(videoKey(payload.video.bvid,payload.video.cid))});
   }
   if (url.pathname === '/api/manage/result' && request.method === 'POST') {
-    const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); const row=await repo.get(id); const expired=Boolean(row&&(row.state==='completed'?(row.result_expires_at??0)<=now:row.expires_at<=now)); if(expired)await repo.destroy(id); const result:ManageResult=expired?{status:'expired'}:!row?{status:'unopened'}:row.state==='completed'?{status:'completed',outcome:row.outcome??undefined,elapsedSeconds:row.outcome==='held'?row.duration_seconds:Number(row.failed_at_seconds??0),expiresAt:row.result_expires_at??undefined}:{status:row.state}; return json(result);
+    const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); const row=await repo.get(id); const expired=Boolean(row&&(row.state==='completed'?(row.result_expires_at??0)<=now:row.expires_at<=now)); if(expired)await repo.destroy(id);
+    let result: ManageResult;
+    if (expired) result={status:'expired'};
+    else if (!row) result={status:'unopened'};
+    else if (row.state !== 'completed') result={status:row.state};
+    else {
+      const [video,scoreTrace,stats]=await Promise.all([
+        repo.videoMetadata(row.video_key),
+        repo.scoreTrace(id,now,row.duration_seconds),
+        repo.stats(row.video_key),
+      ]);
+      result={status:'completed',outcome:row.outcome??undefined,elapsedSeconds:row.outcome==='held'?row.duration_seconds:Number(row.failed_at_seconds??0),expiresAt:row.result_expires_at??undefined,video:video??undefined,scoreTrace,stats};
+    }
+    return json(result);
   }
   if (url.pathname === '/api/manage/result' && request.method === 'DELETE') { const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); return json({deleted:await repo.destroy(id)}); }
   if (url.pathname === '/api/reports/resolve' && request.method === 'POST') { const body=await readJson(request); if(!isRecord(body)||typeof body.reportToken!=='string') return failure('INVALID_INPUT','缺少报告凭证'); const report=await readReport(body.reportToken,env.APP_SIGNING_SECRET,now); return json({report,scoreTrace:report.resultRef?await repo.scoreTrace(report.resultRef,now):[],stats:await repo.stats(videoKey(report.video.bvid,report.video.cid))}); }

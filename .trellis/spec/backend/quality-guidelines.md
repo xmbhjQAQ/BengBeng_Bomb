@@ -108,3 +108,65 @@ Keep the trace bounded and the aggregate update behind the same winning state tr
 const scoreTrace = decodeScoreTrace(body.scoreTrace, video.duration);
 await repo.completeAtomic({ id, outcome, elapsed, scoreTrace, resultExpiresAt });
 ```
+
+## Scenario: Authorized private result detail restoration
+
+### 1. Scope / Trigger
+
+- Trigger: changing `/api/manage/result`, private-result rendering data, or the D1 read path for a completed session.
+- Goal: a capability holder can refresh the private entry and recover the same settlement detail for the configured result lifetime, while public challenge/report contracts and challenge identities remain isolated.
+
+### 2. Signatures
+
+```text
+POST /api/manage/result
+  Authorization: Bearer bm1...
+  -> { status, outcome?, elapsedSeconds?, expiresAt?, video?, stats?, scoreTrace? }
+```
+
+Repository reads for a completed row are `videoMetadata(videoKey)`, `stats(videoKey)`, and `scoreTrace(challengeId, now, durationSeconds)`; the trace comes from `challenge_score_traces.points_json`.
+
+### 3. Contracts
+
+- Only a valid `bm1` bearer may receive completed detail; `/api/challenges/open` never returns private settlement data.
+- A completed response may include stable `video` metadata, anonymous aggregate `stats`, and a validated, ordered, integer 0–100 `scoreTrace` with at most 600 points. It must not include initiator, recipient, message, attempt bearer, report/manage tokens, media URLs, or raw face data.
+- `challenge_score_traces.expires_at` equals the completed row's `result_expires_at`, which is derived from `RESULT_TTL_HOURS` (default 48 hours). Read expiry, scheduled cleanup, and manage deletion remove the private session/trace; permanent video aggregates remain.
+- Missing catalog/trace rows from an older deployment degrade to absent detail rather than fabricated metadata or points.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Valid `bm1`, live completed row | Return summary plus stable video, stats and validated trace |
+| Missing/invalid/wrong-kind authorization | Return the existing 401/400 capability error; never query another capability namespace |
+| Completed row at or past `result_expires_at` | Delete session and trace, then return `{ status: 'expired' }` with no detail |
+| Deleted or missing row | Return `{ status: 'unopened' }` with no detail |
+| Missing/malformed trace or catalog | Return completed summary and an empty/omitted detail field; do not synthesize points |
+
+### 5. Good/Base/Bad Cases
+
+- Good: complete atomically stores the bounded trace, then a manage request reads it with the same result TTL and returns only anonymous projections.
+- Base: an old completed row still shows outcome/seconds while clearly reporting unavailable detail.
+- Bad: trusting a browser-only snapshot as the source of truth, returning the trace from a public open route, or retaining trace rows past the private result expiry.
+
+### 6. Tests Required
+
+- Manage API integration test asserts capability authorization, completed video/stats/trace fields, omission of identities/tokens/media, and exact expiry/deletion behavior.
+- Repository tests assert first-completion trace persistence, immutable retry, duration validation, expiration deletion and destroy coupling.
+- Contract/UI tests assert the private page renders the chart and heatmap when detail exists and renders truthful unavailable states for old/expired/deleted results.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// A client snapshot is not an authorized backend result.
+setResult(JSON.parse(sessionStorage.getItem('completed')!));
+```
+
+#### Correct
+
+```ts
+const result = await post<ManageResult>('/api/manage/result', {}, manageToken);
+// Worker validates bm1, confirms result_expires_at, then reads the bounded D1 trace.
+```
