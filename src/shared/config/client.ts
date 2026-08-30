@@ -7,5 +7,6 @@ export const CLIENT_CONFIG = {
   challenge: { faceGraceMs: 500, recoveryStableMs: 1_000, resumeCountdownMs: 3_000 },
   video: { metadataTimeoutMs: 10_000 },
   heatmapBucketSeconds: 10,
+  scoreTrace: { maxPoints: 600, minimumBucketSeconds: 1 },
   assets: { model: '/vendor/mediapipe/models/face_landmarker.task', wasm: '/vendor/mediapipe/wasm' },
 } as const;

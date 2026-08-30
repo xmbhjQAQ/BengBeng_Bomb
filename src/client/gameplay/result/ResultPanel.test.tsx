@@ -8,7 +8,7 @@ describe('ResultPanel', () => {
   it('shows an immutable failed result and restart command', () => {
     const onRestart = vi.fn();
     render(<ResultPanel result={{
-      schemaVersion: 1,
+      schemaVersion: 2,
       outcome: 'failed',
       videoName: 'demo.mp4',
       failedAt: 2,
@@ -18,6 +18,7 @@ describe('ResultPanel', () => {
       maximumSmoothedScore: 82,
       calibrationSampleCount: 30,
       calibrationQuality: 'good',
+      scoreTrace: [],
     }} onRestart={onRestart} />);
     expect(screen.getByRole('heading', { name: '🤣 没绷住' })).toBeInTheDocument();
     expect(screen.getByText('demo.mp4')).toBeInTheDocument();
@@ -27,7 +28,7 @@ describe('ResultPanel', () => {
 
   it('labels a completed challenge separately from a failed challenge', () => {
     render(<ResultPanel result={{
-      schemaVersion: 1,
+      schemaVersion: 2,
       outcome: 'completed',
       videoName: 'complete.webm',
       failedAt: null,
@@ -37,6 +38,7 @@ describe('ResultPanel', () => {
       maximumSmoothedScore: 41,
       calibrationSampleCount: 28,
       calibrationQuality: 'good',
+      scoreTrace: [],
     }} onRestart={vi.fn()} />);
     expect(screen.getByRole('heading', { name: '😎 绷住了' })).toBeInTheDocument();
     expect(screen.queryByText('🤣 没绷住')).not.toBeInTheDocument();

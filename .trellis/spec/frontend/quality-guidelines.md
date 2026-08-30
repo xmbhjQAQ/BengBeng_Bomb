@@ -20,6 +20,11 @@ interface PlaybackData extends VideoMetadata {
 interface SmileDemoController {
   selectResolvedBilibili(playback: PlaybackData): void;
 }
+
+interface ScorePoint {
+  timeSeconds: number;
+  score: number; // integer 0..100; higher means harder to hold
+}
 ```
 
 Recipient phases are reducer-owned and include preparation/calibration, `running`, face-loss grace/pause/recovery/countdown, buffering, invalid, failed, and completed states.
@@ -27,7 +32,8 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 ### 3. Contracts
 
 - Request camera permission only from the explicit acceptance button.
-- Camera frames, landmarks, blendshapes, raw/smoothed scores, and calibration samples remain local; submit only final outcome and elapsed seconds.
+- Camera frames, landmarks, blendshapes, raw per-frame scores, and calibration samples remain local. Completion may additionally submit at most 600 downsampled `{ timeSeconds, score }` points; never submit reconstructable face data.
+- Record trace points only while the challenge is actually running (including playing `face-grace`), never while paused, buffering, stabilizing or counting down. Freeze the final trace inside the immutable local result so completion retry sends identical points.
 - Call `/api/challenges/open` once, then pass its `PlaybackData` to `selectResolvedBilibili`. Do not call the migrated demo `/api/parse` path again.
 - Map `media[0]` to the player primary URL and keep every entry as a fallback candidate; preserve `danmakuUrl`.
 - Before consent, show the signed stable cover/title/description/duration plus privacy disclosure.
@@ -42,6 +48,8 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Detector initialization errors shown in the UI must remain collapsed behind the friendly recovery message and be length-bounded; redact URLs, local paths, bearer values and token/key/secret assignments before logging or rendering them.
 - Share cards accept only public challenge/report URLs, render the video cover with `crossOrigin='anonymous'` and `referrerPolicy='no-referrer'`, and degrade to a branded placeholder.
 - All thresholds and timeouts come from `src/shared/config/client.ts`; no component owns private copies.
+- The `/` homepage keeps Composer and permanent leaderboard as two accessible state-switched panels. Tab changes preserve Composer state and do not change URL; only entering a real self challenge uses SPA `pushState` to `/c/<token>`.
+- Score charts use “难绷程度” for the existing signal because higher values approach failure. A held result draws its terminal marker at video duration rather than relabeling the last valid sample as the endpoint.
 
 ### 4. Validation & Error Matrix
 
@@ -61,12 +69,16 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 | Any recipient stage transition | pathname/href and page lifetime remain unchanged; fullscreen is display-only |
 | SIMD WASM or its GPU/CPU task creation fails | serialize initialization, then retry the bundled no-SIMD fileset without re-requesting camera permission |
 | Both WASM variants fail | keep the challenge unclaimed, show the normal retry action, and expose only sanitized bounded technical details |
+| Completion retry after a network error | reuse the same frozen score trace; never resample or mutate the payload |
+| Trace has no valid points | show a truthful empty chart state; do not synthesize a line |
+| Homepage tab changes | keep Composer fields/parsed video mounted, hide the inactive panel from assistive technology, and keep `/` unchanged |
+| Leaderboard self/share action | re-resolve the stable BVID through the Worker; never reuse cached media URLs |
 
 ### 5. Good/Base/Bad Cases
 
-- Good: open returns media/danmaku → consent → isolated local calibration → inert ready player → explicit claim/start → one retry-safe final submission → in-page settlement; public report/private management remain separated.
+- Good: open returns media/danmaku → consent → isolated local calibration → inert ready player → explicit claim/start → one retry-safe result plus bounded trace → in-page chart/settlement; public report/private management remain separated.
 - Base: cover or danmaku fails independently; core video challenge continues with clear fallback.
-- Bad: calling an old parser after open, requesting camera on mount, uploading frame metrics, or embedding a manage URL in a QR.
+- Bad: calling an old parser after open, requesting camera on mount, uploading raw frame metrics, calling a rising failure signal “more able to hold”, or embedding a manage URL in a QR.
 
 ### 6. Tests Required
 
@@ -77,6 +89,9 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Camera/detector tests cover permission, track interruption, inference serialization and GPU/CPU adapter output.
 - MediaPipe adapter tests assert the exact automatic GPU → automatic CPU → no-SIMD GPU → no-SIMD CPU order, queue recovery after rejection, and sanitized error output.
 - Detector hook tests cover StrictMode/pending-request reuse, no premature close, final close exactly once, and a fresh initialization after a completed failure.
+- Trace tests cover dynamic bucketing, the 600-point cap, valid challenge phases, reset/restart isolation, deep immutability and identical retry payloads.
+- Chart tests cover empty/one/constant/long traces, danger/failure references, real held endpoint semantics, keyboard/touch labels and reduced motion.
+- Home tests cover lazy leaderboard loading, loading/empty/error retry, preserved Composer state, inaccessible hidden panels, keyboard tabs, self/share actions and pushState/popstate without reload.
 - Capability/share tests reject manage URLs and temporary CDN fields.
 - Run lint, type-check, all tests, production build, and desktop/mobile visual smoke checks.
 
@@ -105,6 +120,13 @@ const fileset = await FilesetResolver.forVisionTasks(wasmDirectory);
 return FaceLandmarker.createFromOptions(fileset, options); // no serialization or no-SIMD recovery
 ```
 
+Do not store every inference result or mutate the trace on retry:
+
+```ts
+samples.push({ ...frameMetrics });
+await complete({ scoreTrace: samples }); // raw, unbounded and retry-unstable
+```
+
 #### Correct
 
 ```ts
@@ -129,4 +151,11 @@ await enqueueInitialization(async () => {
     return createWithDelegateFallback(noSimdFileset);
   }
 });
+```
+
+Capture a bounded projection and freeze it with the local result:
+
+```ts
+const scoreTrace = freezeScoreTrace(downsample(validRunningSamples, 600));
+const result = Object.freeze({ ...settlement, scoreTrace });
 ```

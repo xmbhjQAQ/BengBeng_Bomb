@@ -36,6 +36,7 @@ export interface DemoConfig {
     resumeCountdownMs: number;
   };
   video: { metadataTimeoutMs: number };
+  scoreTrace: { maxPoints: number; minimumBucketSeconds: number };
 }
 
 export const DEMO_CONFIG: Readonly<DemoConfig> = {
@@ -51,6 +52,7 @@ export const DEMO_CONFIG: Readonly<DemoConfig> = {
   scoring: CLIENT_CONFIG.scoring,
   challenge: CLIENT_CONFIG.challenge,
   video: CLIENT_CONFIG.video,
+  scoreTrace: CLIENT_CONFIG.scoreTrace,
 };
 
 export function normalizedConfig(value: DemoConfig): DemoConfig {

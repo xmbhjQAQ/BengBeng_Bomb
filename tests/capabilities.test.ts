@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChallengePayload, ReportPayload } from '../src/shared/contracts';
 import { challengeId, issueChallenge, issueManage, issueReport, issueVideoTicket, readChallenge, readManage, readReport, readVideoTicket } from '../src/worker/capabilities/tokens';
+import { base64UrlEncode, canonicalJson, sign } from '../src/worker/capabilities/crypto';
 import { assertShareableUrl } from '../src/shared/domain/share';
 
 const secret='test-secret-that-is-longer-than-thirty-two-characters';
@@ -10,4 +11,9 @@ describe('capability separation',()=>{
   it('does not interchange public, manage and report capabilities',async()=>{const publicToken=await issueChallenge(challenge,secret);const manage=await issueManage(await challengeId(publicToken),secret);const reportPayload:ReportPayload={v:1,kind:'report',video:challenge.video,outcome:'failed',elapsedSeconds:12,issuedAt:150,expiresAt:190,nonce:'report'};const report=await issueReport(reportPayload,secret);await expect(readManage(publicToken,secret)).rejects.toMatchObject({code:'INVALID_MANAGE_TOKEN'});await expect(readChallenge(manage,secret,150)).rejects.toMatchObject({code:'INVALID_TOKEN'});await expect(readReport(report,secret,150)).resolves.toEqual(reportPayload);expect(publicToken).not.toContain('bm1.');});
   it('hard-rejects manage tokens from every QR/card renderer',async()=>{const publicToken=await issueChallenge(challenge,secret);const manage=await issueManage(await challengeId(publicToken),secret);expect(()=>assertShareableUrl(`https://example.com/manage#m=${manage}`)).toThrow(/管理链接/);expect(()=>assertShareableUrl(`https://example.com/c/${publicToken}`)).not.toThrow();});
   it('strips temporary CDN media before a video can become a public challenge',async()=>{const unsafe={...challenge.video,media:['https://cdn.example/signed.mp4?secret=temporary']} as typeof challenge.video;const ticket=await issueVideoTicket(unsafe,180,secret);const decoded=await readVideoTicket(ticket,secret,150);expect(decoded.video).not.toHaveProperty('media');const publicToken=await issueChallenge({...challenge,video:unsafe},secret);expect(publicToken).not.toContain('temporary');expect(await readChallenge(publicToken,secret,150)).not.toHaveProperty('video.media');});
+  it('round-trips self capabilities and accepts old report payloads without resultRef',async()=>{
+    const selfToken=await issueChallenge({...challenge,mode:'self',initiator:undefined},secret);const self=await readChallenge(selfToken,secret,150);expect(self.mode).toBe('self');expect(self).not.toHaveProperty('initiator');
+    const oldReport={v:1,kind:'report',video:challenge.video,outcome:'held',elapsedSeconds:60,issuedAt:120,expiresAt:190,nonce:'old'};const body=base64UrlEncode(canonicalJson(oldReport));const token=`br1.${body}.${await sign(secret,'report:v1',body)}`;
+    expect(await readReport(token,secret,150)).toEqual(oldReport);
+  });
 });

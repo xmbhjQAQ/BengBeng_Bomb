@@ -77,6 +77,7 @@ export function useSmileDemo(): SmileDemoController {
     restartChallenge,
     getProfile,
     getMaximumScore,
+    getScoreTrace,
   } = inference;
   const mediaEvents = useMediaEventBridge(
     challengeVideo,
@@ -136,10 +137,11 @@ export function useSmileDemo(): SmileDemoController {
       profile: calibratedProfile,
       videoName: bilibiliSelection.title || bilibiliSelection.bvid,
       maximumSmoothedScore: getMaximumScore(),
+      scoreTrace: getScoreTrace(),
     });
     resultRef.current = next;
     setResult(next);
-  }, [bilibiliSelection, challengeState.settlement, getMaximumScore, getProfile]);
+  }, [bilibiliSelection, challengeState.settlement, getMaximumScore, getProfile, getScoreTrace]);
 
   const clearResult = useCallback(() => {
     resultRef.current = null;

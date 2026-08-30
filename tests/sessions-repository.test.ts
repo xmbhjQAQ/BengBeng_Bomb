@@ -16,6 +16,7 @@ class FakeD1 {
   sessions = new Map<string, SessionRow>();
   statsRows = new Map<string, StatsRow>();
   buckets = new Map<string, Map<number, number>>();
+  traces = new Map<string,{points_json:string;expires_at:number}>();
   lastBucketQuery = '';
   batchCalls = 0;
 
@@ -27,6 +28,7 @@ class FakeD1 {
     if (statement.query.includes('FROM video_stats')) {
       return this.statsRows.get(String(statement.args[0])) ?? null;
     }
+    if (statement.query.includes('FROM challenge_score_traces')) return this.traces.get(String(statement.args[0])) ?? null;
     return null;
   }
   all(statement: FakeStatement) {
@@ -38,6 +40,7 @@ class FakeD1 {
       .map(([startSeconds, count]) => ({ startSeconds, count }));
   }
   run(statement: FakeStatement) {
+    if (statement.query.startsWith('DELETE FROM challenge_score_traces')) return this.traces.delete(String(statement.args[0])) ? 1 : 0;
     if (!statement.query.startsWith('UPDATE challenge_sessions SET state')) return 0;
     const id = String(statement.args[4]);
     const row = this.sessions.get(id);
@@ -54,7 +57,9 @@ class FakeD1 {
   }
   async batch(statements: FakeStatement[]) {
     this.batchCalls += 1;
+    const changes:number[]=[];
     for (const statement of statements) {
+      let changed=1;
       if (statement.query.includes('INSERT INTO video_stats')) {
         const key = String(statement.args[0]);
         const current = this.statsRows.get(key) ?? { total: 0, held: 0, failed: 0, cumulative_elapsed_seconds: 0 };
@@ -72,8 +77,16 @@ class FakeD1 {
         values.set(start, (values.get(start) ?? 0) + 1);
         this.buckets.set(key, values);
       }
+      if (statement.query.includes('INSERT INTO challenge_score_traces')) {
+        const key=String(statement.args[0]);
+        if(this.traces.has(key)) changed=0; else this.traces.set(key,{points_json:String(statement.args[1]),expires_at:Number(statement.args[2])});
+      }
+      if (statement.query.startsWith('DELETE FROM challenge_score_traces')) changed=this.traces.delete(String(statement.args[0]))?1:0;
+      if (statement.query.startsWith('DELETE FROM challenge_sessions')) changed=this.sessions.delete(String(statement.args[0]))?1:0;
+      if (statement.query.startsWith('UPDATE challenge_sessions SET state')) changed=this.run(statement);
+      changes.push(changed);
     }
-    return statements.map(() => ({ meta: { changes: 1 } }));
+    return changes.map((value) => ({ meta: { changes:value } }));
   }
 }
 
@@ -101,10 +114,10 @@ describe('SessionRepository aggregate buckets', () => {
     db.sessions.set('c', started('c'));
     const repository = new SessionRepository(db as unknown as D1Database);
 
-    await repository.complete({ id: 'a', outcome: 'failed', elapsed: 12, now: 100, resultExpiresAt: 200, bucketSize: 10 });
-    await repository.complete({ id: 'b', outcome: 'failed', elapsed: 18, now: 101, resultExpiresAt: 201, bucketSize: 10 });
-    await repository.complete({ id: 'c', outcome: 'failed', elapsed: 26, now: 102, resultExpiresAt: 202, bucketSize: 10 });
-    const repeated = await repository.complete({ id: 'a', outcome: 'failed', elapsed: 12, now: 103, resultExpiresAt: 203, bucketSize: 10 });
+    await repository.complete({ id: 'a', outcome: 'failed', elapsed: 12, now: 100, resultExpiresAt: 200, bucketSize: 10, scoreTrace:[] });
+    await repository.complete({ id: 'b', outcome: 'failed', elapsed: 18, now: 101, resultExpiresAt: 201, bucketSize: 10, scoreTrace:[] });
+    await repository.complete({ id: 'c', outcome: 'failed', elapsed: 26, now: 102, resultExpiresAt: 202, bucketSize: 10, scoreTrace:[] });
+    const repeated = await repository.complete({ id: 'a', outcome: 'failed', elapsed: 12, now: 103, resultExpiresAt: 203, bucketSize: 10, scoreTrace:[] });
     const stats = await repository.stats('BV-test:1');
 
     expect(repeated.status).toBe('existing');
@@ -119,4 +132,13 @@ describe('SessionRepository aggregate buckets', () => {
     });
     expect(db.lastBucketQuery).toContain('bucket_start_seconds AS "startSeconds"');
   });
+  it('keeps the first immutable trace, couples its expiry and destroys it with the result',async()=>{
+    const db=new FakeD1();db.sessions.set('trace',started('trace'));const repository=new SessionRepository(db as unknown as D1Database);
+    await repository.complete({id:'trace',outcome:'failed',elapsed:12,now:100,resultExpiresAt:200,bucketSize:10,scoreTrace:[{timeSeconds:1,score:42}]});
+    await repository.complete({id:'trace',outcome:'failed',elapsed:14,now:101,resultExpiresAt:300,bucketSize:10,scoreTrace:[{timeSeconds:2,score:99}]});
+    expect(await repository.scoreTrace('trace',150)).toEqual([{timeSeconds:1,score:42}]);
+    expect(db.traces.get('trace')?.expires_at).toBe(200);
+    expect(await repository.destroy('trace')).toBe(true);expect(db.traces.has('trace')).toBe(false);expect(db.sessions.has('trace')).toBe(false);
+  });
+  it('deletes an expired trace on read',async()=>{const db=new FakeD1();db.traces.set('old',{points_json:'[]',expires_at:100});const repository=new SessionRepository(db as unknown as D1Database);expect(await repository.scoreTrace('old',100)).toEqual([]);expect(db.traces.has('old')).toBe(false);});
 });

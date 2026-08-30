@@ -1,7 +1,9 @@
+import type { ScorePoint } from '../../../shared/contracts';
+
 export type ChallengeOutcome = 'failed' | 'completed';
 
 export interface LocalChallengeResult {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly outcome: ChallengeOutcome;
   readonly videoName: string;
   readonly failedAt: number | null;
@@ -11,4 +13,5 @@ export interface LocalChallengeResult {
   readonly maximumSmoothedScore: number;
   readonly calibrationSampleCount: number;
   readonly calibrationQuality: 'good';
+  readonly scoreTrace: ReadonlyArray<Readonly<ScorePoint>>;
 }

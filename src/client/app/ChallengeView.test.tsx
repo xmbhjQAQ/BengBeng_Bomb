@@ -5,7 +5,7 @@ import { ChallengeView } from './ChallengeView';
 
 const mocks = vi.hoisted(() => {
   const demo = {
-    result: null as null | { outcome: 'completed' | 'failed'; videoPositionSeconds: number },
+    result: null as null | { outcome: 'completed' | 'failed'; videoPositionSeconds: number; scoreTrace: Array<{timeSeconds:number;score:number}> },
     phase: 'preparing',
     cameraStatus: 'idle',
     detectorStatus: 'idle',
@@ -151,7 +151,7 @@ describe('ChallengeView', () => {
     });
     Object.assign(mocks.demo, {
       phase: 'failed',
-      result: { outcome: 'failed', videoPositionSeconds: 12 },
+      result: { outcome: 'failed', videoPositionSeconds: 12, scoreTrace: [{timeSeconds:12,score:80}] },
     });
     view.rerender(<ChallengeView token="public-token" />);
     expect(screen.getByText(/正在封存挑战结果/)).toBeInTheDocument();
@@ -170,7 +170,7 @@ describe('ChallengeView', () => {
     await screen.findByText('测试视频');
     fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
     mocks.post.mockRejectedValueOnce(new Error('网络暂时不可用'));
-    Object.assign(mocks.demo, { phase: 'completed', result: { outcome: 'completed', videoPositionSeconds: 60 } });
+    Object.assign(mocks.demo, { phase: 'completed', result: { outcome: 'completed', videoPositionSeconds: 60, scoreTrace: [{timeSeconds:1,score:12}] } });
     view.rerender(<ChallengeView token="public-token" />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('网络暂时不可用');
@@ -181,6 +181,15 @@ describe('ChallengeView', () => {
     const completionCalls = mocks.post.mock.calls.filter(([path]) => path === '/api/challenges/complete');
     expect(completionCalls).toHaveLength(2);
     expect(completionCalls[1]?.[1]).toEqual(completionCalls[0]?.[1]);
+    expect(completionCalls[0]?.[1]).toMatchObject({ scoreTrace: [{timeSeconds:1,score:12}] });
     expect(sessionStorage.getItem('bengbeng-attempt:public-token')).toBeNull();
+  });
+
+  it('uses the unified single-person wording without a fake identity', async () => {
+    mocks.post.mockResolvedValue({ ...opened, challenge: { ...opened.challenge, mode: 'self', initiator: undefined } });
+    render(<ChallengeView token="self-token" />);
+    expect(await screen.findByText('单人挑战')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '看看你能绷到第几秒' })).toBeVisible();
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
   });
 });

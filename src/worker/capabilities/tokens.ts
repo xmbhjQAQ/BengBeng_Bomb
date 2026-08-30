@@ -1,4 +1,4 @@
-import { decodeChallengePayload, decodeVideoMetadata, isRecord, type ChallengePayload, type ReportPayload, type VideoMetadata } from '../../shared/contracts';
+import { decodeChallengePayload, decodeReportPayload, decodeVideoMetadata, isRecord, type ChallengePayload, type ReportPayload, type VideoMetadata } from '../../shared/contracts';
 import { base64UrlEncode, canonicalJson, decodeText, randomToken, sha256, sign, verify } from './crypto';
 
 export class CapabilityError extends Error { constructor(public readonly code: string, message: string) { super(message); } }
@@ -17,5 +17,5 @@ export async function readManage(token: string, secret: string) { const [prefix,
 export interface VideoTicket { v: 1; kind: 'video'; video: VideoMetadata; expiresAt: number; nonce: string }
 export const issueVideoTicket = (video: VideoMetadata, expiresAt: number, secret: string) => encode('bv1', 'video:v1', { v: 1, kind: 'video', video: decodeVideoMetadata(video), expiresAt, nonce: randomToken(12) }, secret);
 export async function readVideoTicket(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<VideoTicket> { const value = await decode(token, 'bv1', 'video:v1', secret); if (!isRecord(value) || value.v !== 1 || value.kind !== 'video' || !isRecord(value.video) || typeof value.expiresAt !== 'number' || typeof value.nonce !== 'string') throw new CapabilityError('INVALID_TOKEN', '视频凭证格式不正确'); ensureFresh(value.expiresAt, now); return { v:1,kind:'video',video:decodeVideoMetadata(value.video),expiresAt:value.expiresAt,nonce:value.nonce }; }
-export const issueReport = (payload: ReportPayload, secret: string) => encode('br1', 'report:v1', payload, secret);
-export async function readReport(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<ReportPayload> { const value = await decode(token, 'br1', 'report:v1', secret); if (!isRecord(value) || value.v !== 1 || value.kind !== 'report' || typeof value.expiresAt !== 'number') throw new CapabilityError('INVALID_REPORT_TOKEN', '报告凭证格式不正确'); ensureFresh(value.expiresAt, now); return value as unknown as ReportPayload; }
+export const issueReport = (payload: ReportPayload, secret: string) => encode('br1', 'report:v1', decodeReportPayload(payload), secret);
+export async function readReport(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<ReportPayload> { const value = decodeReportPayload(await decode(token, 'br1', 'report:v1', secret)); ensureFresh(value.expiresAt, now); return value; }

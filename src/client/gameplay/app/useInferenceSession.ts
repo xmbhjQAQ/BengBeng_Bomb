@@ -19,6 +19,7 @@ import {
 } from '../scoring';
 import { DEMO_CONFIG } from './config';
 import type { LiveMetrics } from './types';
+import { freezeScoreTrace, isScoreTraceRecordingPhase, recordScorePoint } from '../scoring/scoreTrace';
 
 const initialMetrics = (): LiveMetrics => ({
   faceValidity: 'waiting',
@@ -61,6 +62,7 @@ export function useInferenceSession(input: InferenceSessionInput) {
   const scoringRef = useRef<ScoringState>(initialScoringState());
   const maximumScore = useRef(0);
   const recentFrames = useRef<number[]>([]);
+  const scoreTrace = useRef<Array<{ timeSeconds: number; score: number }>>([]);
 
   const resetAll = useCallback(() => {
     profileRef.current = null;
@@ -73,6 +75,7 @@ export function useInferenceSession(input: InferenceSessionInput) {
     setSample(null);
     maximumScore.current = 0;
     recentFrames.current = [];
+    scoreTrace.current = [];
     setMetrics(initialMetrics());
   }, []);
 
@@ -90,6 +93,7 @@ export function useInferenceSession(input: InferenceSessionInput) {
   const beginChallenge = useCallback(() => {
     scoringRef.current = initialScoringState();
     maximumScore.current = 0;
+    scoreTrace.current = [];
     setSample(null);
     dispatch({ type: 'STARTED', now: performance.now() });
   }, [dispatch]);
@@ -97,12 +101,14 @@ export function useInferenceSession(input: InferenceSessionInput) {
   const restartChallenge = useCallback(() => {
     scoringRef.current = initialScoringState();
     maximumScore.current = 0;
+    scoreTrace.current = [];
     setSample(null);
     setMetrics(initialMetrics());
   }, []);
 
   const getProfile = useCallback(() => profileRef.current, []);
   const getMaximumScore = useCallback(() => maximumScore.current, []);
+  const getScoreTrace = useCallback(() => freezeScoreTrace(scoreTrace.current), []);
 
   useEffect(() => {
     const shouldRun =
@@ -173,6 +179,23 @@ export function useInferenceSession(input: InferenceSessionInput) {
           }));
           if (next.sample.valid) {
             maximumScore.current = Math.max(maximumScore.current, next.sample.smoothedScore ?? 0);
+            const smoothedScore = next.sample.smoothedScore;
+            const timeSeconds = challengeVideo?.currentTime;
+            if (
+              smoothedScore !== null &&
+              timeSeconds !== undefined &&
+              isScoreTraceRecordingPhase(challengeRef.current.phase)
+            ) {
+              recordScorePoint(scoreTrace.current, {
+                timeSeconds,
+                smoothedScore,
+                durationSeconds: challengeVideo && Number.isFinite(challengeVideo.duration)
+                  ? challengeVideo.duration
+                  : 0,
+                maxPoints: DEMO_CONFIG.scoreTrace.maxPoints,
+                minimumBucketSeconds: DEMO_CONFIG.scoreTrace.minimumBucketSeconds,
+              });
+            }
             dispatch({ type: 'FACE_VALID', now: observation.timestamp });
           } else {
             dispatch({ type: 'FACE_INVALID', now: observation.timestamp });
@@ -229,5 +252,6 @@ export function useInferenceSession(input: InferenceSessionInput) {
     restartChallenge,
     getProfile,
     getMaximumScore,
+    getScoreTrace,
   };
 }

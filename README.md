@@ -25,8 +25,11 @@ npx wrangler dev
 这些是 Worker 的普通环境变量，修改部署配置即可，不需要改业务代码或重新构建前端：
 
 - `CHALLENGE_TTL_HOURS`：未完成挑战有效期，默认 `48`
-- `RESULT_TTL_HOURS`：完成后私人结果保留期，默认 `48`
+- `RESULT_TTL_HOURS`：完成后私人结果及降采样表情曲线保留期，默认 `48`
 - `VIDEO_TICKET_TTL_MINUTES`：创建阶段视频票据有效期，默认 `15`
+- `LEADERBOARD_MIN_ATTEMPTS`：视频进入永久排行榜所需的最少完成次数，默认 `5`
+- `LEADERBOARD_CACHE_SECONDS`：公开排行榜缓存时间，默认 `600`
+- `LEADERBOARD_LIMIT`：排行榜返回条目上限，默认 `20`
 - `BILIBILI_QN`：请求的 B 站清晰度，默认 `80`
 
 每小时 Cron 删除过期私人会话；`video_stats` 和 `video_fail_buckets` 是不可关联昵称/留言的匿名聚合，不随私人结果销毁。
@@ -38,12 +41,13 @@ npx wrangler dev
 3. 用 `npx wrangler secret put APP_SIGNING_SECRET` 和 `npx wrangler secret put BILIDIRECT_API_KEY` 配置 Secret。
 4. 执行 `npm run check` 和 `npx wrangler deploy --dry-run`，确认后再运行 `npx wrangler deploy`。
 
-回滚时部署上一版 Worker bundle。v1 migration 只有新增表与索引，不应在回滚中删除表。更换签名 Secret 会使尚未过期的既有链接失效。
+回滚时部署上一版 Worker bundle。现有 migrations 只新增表、列与索引，不应在回滚中删除表。更换签名 Secret 会使尚未过期的既有链接失效。
 
 ## 隐私与限制
 
-- 摄像头帧、landmark、blendshape、逐帧 Smile Score 不会进入网络请求或 D1。
-- D1 只保存打开/开始/完成状态、最终结果、失败秒数和 attempt token 的 SHA-256 摘要；不保存昵称、留言、公私凭证或摄像头数据。
+- 摄像头帧、landmark、blendshape、原始及逐帧 Smile Score 不会进入网络请求或 D1；只上传每秒最多一个、总计不超过 600 个的 0–100 整数量化点。
+- D1 保存打开/开始/完成状态、最终结果、失败秒数、attempt token 的 SHA-256 摘要，以及与私人结果同寿命的降采样曲线；不保存昵称、留言、公私凭证或摄像头数据。
+- 私人结果过期或主动销毁时同步删除曲线；排行榜只保留不可关联个人身份的视频元数据和永久匿名聚合。
 - 管理凭证放在 URL fragment 中，并仅通过 `Authorization` 请求头发送。
 - B 站临时视频 URL 不写入挑战凭证或 D1；打开挑战时会重新解析，视频主体不经过 Worker。
 - 当前稳定支持 `bilibili.com/video/BV...` 直接链接。b23.tv、QQ 小程序等短链会提示用户先打开再复制 BV 地址。

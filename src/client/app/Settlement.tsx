@@ -1,12 +1,14 @@
 import { createShareCard, downloadBlob } from '../sharing/card';
-import type { AggregateStats, ChallengePayload } from '../../shared/contracts';
+import type { AggregateStats, ChallengePayload, ScorePoint } from '../../shared/contracts';
 import { createHeatmapBars } from './heatmap';
+import { ScoreTraceChart } from './ScoreTraceChart';
 
 interface SettlementResult {
   outcome: 'held' | 'failed';
   elapsedSeconds: number;
   reportUrl: string;
   stats: AggregateStats;
+  scoreTrace?: readonly ScorePoint[];
 }
 
 export function Settlement({
@@ -34,6 +36,7 @@ export function Settlement({
         <div className="time-score"><strong>{result.elapsedSeconds.toFixed(1)}</strong><span>秒</span></div>
         <p>{held ? '完整看完，一次都没笑。' : '这个瞬间击穿了你的防线。'}</p>
       </section>
+      <ScoreTraceChart points={result.scoreTrace ?? []} outcome={result.outcome} durationSeconds={challenge.video.duration} />
       <Stats stats={result.stats} />
       <section className="section">
         <h2>晒出战报</h2>

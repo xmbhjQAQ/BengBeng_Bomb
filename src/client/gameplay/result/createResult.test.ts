@@ -13,6 +13,7 @@ describe('createLocalResult', () => {
       },
       videoName: 'demo.mp4',
       maximumSmoothedScore: 81,
+      scoreTrace: [{ timeSeconds: 2, score: 81 }],
       profile: {
         schemaVersion: 1,
         sampleCount: 30,
@@ -31,10 +32,13 @@ describe('createLocalResult', () => {
       'maximumSmoothedScore',
       'outcome',
       'schemaVersion',
+      'scoreTrace',
       'validElapsedMs',
       'videoDurationSeconds',
       'videoName',
       'videoPositionSeconds',
     ]);
+    expect(Object.isFrozen(result.scoreTrace)).toBe(true);
+    expect(Object.isFrozen(result.scoreTrace[0])).toBe(true);
   });
 });

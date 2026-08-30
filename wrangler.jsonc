@@ -13,6 +13,9 @@
     "CHALLENGE_TTL_HOURS": "48",
     "RESULT_TTL_HOURS": "48",
     "VIDEO_TICKET_TTL_MINUTES": "15",
+    "LEADERBOARD_MIN_ATTEMPTS": "5",
+    "LEADERBOARD_CACHE_SECONDS": "600",
+    "LEADERBOARD_LIMIT": "20",
     "BILIDIRECT_BASE_URL": "https://replace-with-your-bilidirect.example.com",
     "BILIBILI_QN": "80"
   },

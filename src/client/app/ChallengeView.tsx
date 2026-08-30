@@ -20,6 +20,7 @@ interface Completed {
   elapsedSeconds: number;
   reportUrl: string;
   stats: AggregateStats;
+  scoreTrace?: ReadonlyArray<Readonly<{ timeSeconds: number; score: number }>>;
 }
 
 type Submission = { status: 'idle' | 'submitting' | 'error'; error: string };
@@ -63,9 +64,10 @@ export function ChallengeView({ token }: { token: string }) {
         attemptToken: attempt,
         outcome: localResult.outcome === 'completed' ? 'held' : 'failed',
         elapsedSeconds: localResult.videoPositionSeconds,
+        scoreTrace: localResult.scoreTrace,
       });
       sessionStorage.removeItem(attemptKey(token));
-      setCompleted(value);
+      setCompleted({ ...value, scoreTrace: localResult.scoreTrace });
       setSubmission({ status: 'idle', error: '' });
       void document.exitFullscreen?.().catch(() => undefined);
     } catch (error) {
@@ -157,9 +159,9 @@ export function ChallengeView({ token }: { token: string }) {
     <main className={`page challenge-page${active ? ' is-active' : ''}`} data-stage={stage}>
       <header className="hero compact">
         <p className="eyebrow">
-          {opened.challenge.recipient ? `${opened.challenge.recipient}，接招吧` : '一枚绷绷炸弹'}
+          {opened.challenge.mode === 'self' ? '单人挑战' : opened.challenge.recipient ? `${opened.challenge.recipient}，接招吧` : '一枚绷绷炸弹'}
         </p>
-        <h1>{opened.challenge.initiator} 挑战你</h1>
+        <h1>{opened.challenge.mode === 'self' ? '看看你能绷到第几秒' : `${opened.challenge.initiator ?? '朋友'} 挑战你`}</h1>
         <p className="intro">{opened.challenge.message || '看完整段视频，全程不许笑。'}</p>
       </header>
       {!active && <StageProgress stage={stage} />}
@@ -170,7 +172,9 @@ export function ChallengeView({ token }: { token: string }) {
             <h2>开始前，请确认隐私说明</h2>
             <ul>
               <li>摄像头画面和人脸特征只在你的浏览器中检测，不上传、不保存。</li>
-              <li>只会提交最终成功/失败和坚持秒数，发起者可以查看。</li>
+              <li>只上传最终结果、坚持秒数，以及每秒最多一个的 0–100 表情程度值。</li>
+              <li>量化曲线与挑战结果使用相同保留时间，结果过期或主动销毁时同步删除。</li>
+              <li>不上传摄像头图像、人脸特征、landmarks 或逐帧原始检测数据。</li>
               <li>脱敏后的结果会计入这条视频的匿名统计，销毁私人结果后仍会保留。</li>
             </ul>
             <button type="button" onClick={() => { setAccepted(true); demo.openCamera(); }}>
@@ -222,7 +226,7 @@ export function ChallengeView({ token }: { token: string }) {
             <p>
               {submission.status === 'error'
                 ? '本地结果仍保留在当前页面，可以安全重试，不会重复计算匿名统计。'
-                : '只提交最终结果和坚持秒数，摄像头数据仍只留在本机。'}
+                : '正在提交最终结果、坚持秒数和降采样表情曲线；摄像头图像和人脸特征仍只留在本机。'}
             </p>
             {submission.status === 'error' && (
               <>
