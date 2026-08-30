@@ -16,7 +16,9 @@ npx wrangler dev
 
 编辑 `.dev.vars`，填写至少 32 字符的随机 `APP_SIGNING_SECRET` 和已有 bilidirect 服务的 `BILIDIRECT_API_KEY`。在 `wrangler.jsonc` 中把 `BILIDIRECT_BASE_URL` 改为已有后端地址。不要提交 `.dev.vars`。
 
-若要分别调试 Vite 前端，可在一个终端运行 `npx wrangler dev`，另一个运行 `npm run dev`；Vite 会把 `/api` 代理到 `127.0.0.1:8787`。摄像头必须运行在 HTTPS 或 localhost 安全上下文中。
+若要分别调试 Vite 前端，可在一个终端运行 `npm run dev:worker`，另一个运行 `npm run dev`；两者都会监听 `0.0.0.0`，Vite 会把 `/api` 代理到 `127.0.0.1:8787`。本机可访问 Vite 输出的 Local 地址，局域网设备可访问 Network 地址。摄像头必须运行在 HTTPS 或 localhost 安全上下文中，因此局域网设备请访问 Vite 输出的 HTTPS Network 地址并在测试设备上信任本地证书。监听所有网卡会让同一网络中的设备能够访问测试服务，测试完请关闭两个进程。
+
+手机端最方便的测试方式是运行 `npm run dev:phone`。该命令会先构建前端，再通过 Wrangler Quick Tunnel 输出一个具有有效证书的临时 HTTPS 地址；用手机打开该地址即可测试摄像头。隧道运行期间网站可从公网访问，请勿分享地址，并在测试结束后按 `Ctrl+C` 关闭。
 
 ## 可配置生命周期
 
