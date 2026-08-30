@@ -9,6 +9,7 @@ interface CameraPanelProps {
   compact?: boolean;
   cameraStatus: CameraStatus;
   detectorStatus: DetectorStatus;
+  detectorError: string | null;
   calibrationIssue: CalibrationProfile['quality'] | null;
   calibrationProgress: number;
   calibrating: boolean;
@@ -46,6 +47,12 @@ export function CameraPanel(props: CameraPanelProps) {
           <p className={props.detectorStatus === 'error' ? 'error' : ''}>
             {detectorStatusText(props.detectorStatus)}
           </p>
+          {props.detectorStatus === 'error' && props.detectorError && (
+            <details className="detector-error-details">
+              <summary>{t.camera.modelErrorDetails}</summary>
+              <code>{props.detectorError}</code>
+            </details>
+          )}
           {(props.cameraStatus === 'idle' || cameraFailed) && (
             <button type="button" onClick={props.onOpen} disabled={props.cameraStatus === 'requesting'}>
               {cameraFailed ? t.camera.retry : t.camera.open}

@@ -37,6 +37,7 @@ export function App() {
       <CameraPanel
         cameraStatus={demo.cameraStatus}
         detectorStatus={demo.detectorStatus}
+        detectorError={demo.detectorError}
         calibrationIssue={demo.calibrationIssue}
         calibrationProgress={demo.calibrationProgress}
         calibrating={demo.phase === 'calibrating'}

@@ -7,6 +7,39 @@ import type { DemoConfig } from '../app/config';
 import { faceLandmarkerModelUrl, mediapipeWasmDirectory } from './assetPaths';
 import type { DetectionResult, FaceDetector, FaceObservation } from './types';
 
+type VisionFileset = Parameters<typeof FaceLandmarker.createFromOptions>[0];
+
+let initializationTail: Promise<void> = Promise.resolve();
+
+const sanitizeError = (error: unknown) => {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw
+    .replace(/\b(?:https?|file|blob):\/\/[^\s"'<>]+/gi, '[url]')
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:token|key|secret|authorization)\s*[:=]\s*[^\s,;]+/gi, '[redacted]')
+    .replace(/(?:\.{0,2}\/|[A-Z]:\\)(?:vendor|api|c)[/\\][^\s"'<>]+/gi, '[path]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240) || '未知错误';
+};
+
+export class DetectorInitializationError extends Error {
+  readonly code = 'MEDIAPIPE_INITIALIZATION_FAILED';
+
+  constructor(automaticError: unknown, noSimdError: unknown) {
+    super(
+      `MediaPipe 初始化失败（自动 SIMD：${sanitizeError(automaticError)}；` +
+      `无 SIMD：${sanitizeError(noSimdError)}）`,
+    );
+    this.name = 'DetectorInitializationError';
+  }
+}
+
+export const detectorErrorMessage = (error: unknown) =>
+  error instanceof DetectorInitializationError
+    ? error.message
+    : `MediaPipe 初始化失败：${sanitizeError(error)}`;
+
 const category = (result: FaceLandmarkerResult, face: number, name: string) => {
   const score = result.faceBlendshapes[face]?.categories.find(
     (item) => item.categoryName === name,
@@ -95,8 +128,10 @@ export function toObservation(result: FaceLandmarkerResult, timestamp: number): 
   };
 }
 
-async function createLandmarker(config: DemoConfig['detector']) {
-  const vision = await FilesetResolver.forVisionTasks(mediapipeWasmDirectory());
+async function createLandmarkerWithFileset(
+  config: DemoConfig['detector'],
+  vision: VisionFileset,
+) {
   const options = {
     runningMode: 'VIDEO' as const,
     numFaces: config.maxFaces,
@@ -119,17 +154,52 @@ async function createLandmarker(config: DemoConfig['detector']) {
   }
 }
 
-export async function createFaceDetector(config: DemoConfig['detector']): Promise<FaceDetector> {
-  const landmarker = await createLandmarker(config);
+const noSimdFileset = (): VisionFileset => {
+  const directory = mediapipeWasmDirectory();
   return {
-    detect(video, timestamp): DetectionResult {
-      const started = performance.now();
-      const result = landmarker.detectForVideo(video, timestamp);
-      return {
-        observation: toObservation(result, timestamp),
-        inferenceMs: performance.now() - started,
-      };
-    },
-    close: () => landmarker.close(),
+    wasmLoaderPath: `${directory}/vision_wasm_nosimd_internal.js`,
+    wasmBinaryPath: `${directory}/vision_wasm_nosimd_internal.wasm`,
   };
+};
+
+async function createLandmarker(config: DemoConfig['detector']) {
+  let automaticError: unknown;
+  try {
+    const automaticFileset = await FilesetResolver.forVisionTasks(mediapipeWasmDirectory());
+    return await createLandmarkerWithFileset(config, automaticFileset);
+  } catch (error) {
+    automaticError = error;
+  }
+
+  try {
+    return await createLandmarkerWithFileset(config, noSimdFileset());
+  } catch (noSimdError) {
+    throw new DetectorInitializationError(automaticError, noSimdError);
+  }
+}
+
+function enqueueInitialization<T>(initialize: () => Promise<T>): Promise<T> {
+  const pending = initializationTail.then(initialize, initialize);
+  initializationTail = pending.then(
+    () => undefined,
+    () => undefined,
+  );
+  return pending;
+}
+
+export async function createFaceDetector(config: DemoConfig['detector']): Promise<FaceDetector> {
+  return enqueueInitialization(async () => {
+    const landmarker = await createLandmarker(config);
+    return {
+      detect(video, timestamp): DetectionResult {
+        const started = performance.now();
+        const result = landmarker.detectForVideo(video, timestamp);
+        return {
+          observation: toObservation(result, timestamp),
+          inferenceMs: performance.now() - started,
+        };
+      },
+      close: () => landmarker.close(),
+    };
+  });
 }

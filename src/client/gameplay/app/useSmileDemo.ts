@@ -23,7 +23,7 @@ export function useSmileDemo(): SmileDemoController {
     DEMO_CONFIG.detector,
     detectorRetry,
   );
-  const { status: detectorStatus, detector } = detectorSession;
+  const { status: detectorStatus, detector, error: detectorError } = detectorSession;
   const [bilibiliConfig, setBilibiliConfig] = useState(DEMO_CONFIG.bilibili);
   const [playerActive, setPlayerActive] = useState(false);
   const bilibili = useBilibiliPlayer({
@@ -209,6 +209,7 @@ export function useSmileDemo(): SmileDemoController {
   return {
     cameraStatus,
     detectorStatus,
+    detectorError,
     phase: challengeState.phase,
     invalidReason: challengeState.invalidReason,
     bilibiliSelection,

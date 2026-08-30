@@ -20,6 +20,7 @@ export interface LiveMetrics {
 export interface SmileDemoController {
   cameraStatus: CameraStatus;
   detectorStatus: DetectorStatus;
+  detectorError: string | null;
   phase: ChallengePhase;
   invalidReason: InvalidationReason | null;
   bilibiliSelection: BilibiliVideoData | null;

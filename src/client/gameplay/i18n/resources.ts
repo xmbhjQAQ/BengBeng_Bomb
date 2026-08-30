@@ -34,6 +34,7 @@ export const zhCN = {
     unsupported: '当前浏览器不支持摄像头 API。',
     modelLoading: '正在加载本地检测模型…',
     modelError: '本地检测模型加载失败，请查看故障排查文档后重试。',
+    modelErrorDetails: '查看技术详情',
     detectorReady: '人脸检测已就绪（等待一张脸）',
     retryModel: '重新加载模型',
     calibrating: '请保持正脸和自然、放松的中性表情…',
