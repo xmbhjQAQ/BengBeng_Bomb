@@ -6,6 +6,7 @@ import { cameraStatusText, detectorStatusText } from './viewText';
 
 interface CameraPanelProps {
   bubble?: boolean;
+  compact?: boolean;
   cameraStatus: CameraStatus;
   detectorStatus: DetectorStatus;
   calibrationIssue: CalibrationProfile['quality'] | null;
@@ -29,8 +30,8 @@ export function CameraPanel(props: CameraPanelProps) {
       : null;
 
   return (
-    <section className={`section camera-section${props.bubble ? ' camera-bubble' : ''}`}>
-      <h2>{t.camera.title}</h2>
+    <section className={`section camera-section${props.bubble ? ' camera-bubble' : ''}${props.compact ? ' camera-compact' : ''}`}>
+      <h2>{props.compact ? '摄像头已就绪' : t.camera.title}</h2>
       <div className="camera-layout">
         <video
           ref={props.setCameraElement}
@@ -55,22 +56,22 @@ export function CameraPanel(props: CameraPanelProps) {
               {t.camera.retryModel}
             </button>
           )}
-          <button type="button" onClick={props.onCalibrate} disabled={!props.canCalibrate}>
+          {!props.compact && <button type="button" onClick={props.onCalibrate} disabled={!props.canCalibrate}>
             {props.profile ? t.camera.recalibrate : t.camera.calibrate}
-          </button>
+          </button>}
           {props.calibrating && (
             <div className="calibration-progress">
               <progress max={1} value={props.calibrationProgress} />
             </div>
           )}
-          <p className={props.profile?.quality === 'good' ? 'success' : ''} role="status">
+          {!props.compact && <p className={props.profile?.quality === 'good' ? 'success' : ''} role="status">
             {props.calibrating
               ? t.camera.calibrating
               : props.profile?.quality === 'good'
                 ? t.camera.calibrationGood
                 : t.camera.calibrationWaiting}
-          </p>
-          {issueText && <p className="error" role="alert">{issueText}</p>}
+          </p>}
+          {!props.compact && issueText && <p className="error" role="alert">{issueText}</p>}
         </div>
       </div>
     </section>

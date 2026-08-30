@@ -15,7 +15,7 @@ import { useVisibilityGuard } from './useVisibilityGuard';
 
 export function useSmileDemo(): SmileDemoController {
   const camera = useCamera(DEMO_CONFIG.camera);
-  const { status: cameraStatus, stream: cameraStream, start: startCamera } = camera;
+  const { status: cameraStatus, stream: cameraStream, start: startCamera, stop: stopCamera } = camera;
   const [detectorRetry, setDetectorRetry] = useState(0);
   const retryDetector = useCallback(() => setDetectorRetry((value) => value + 1), []);
   const detectorSession = useDetector(
@@ -173,9 +173,9 @@ export function useSmileDemo(): SmileDemoController {
   }, [clearResult, dispatch, loadResolved, resetAll, resetToSelecting]);
 
   const startCalibration = useCallback(() => {
-    if (!videoReady || cameraStatus !== 'ready' || detectorStatus !== 'ready' || !detector) return;
+    if (cameraStatus !== 'ready' || detectorStatus !== 'ready' || !detector) return;
     beginCalibration();
-  }, [beginCalibration, cameraStatus, detector, detectorStatus, videoReady]);
+  }, [beginCalibration, cameraStatus, detector, detectorStatus]);
 
   const startChallenge = useCallback(() => {
     if (
@@ -225,9 +225,9 @@ export function useSmileDemo(): SmileDemoController {
     result,
     countdownSeconds,
     canCalibrate:
-      videoReady &&
       cameraStatus === 'ready' &&
       detectorStatus === 'ready' &&
+      Boolean(detector) &&
       challengeState.phase === 'preparing',
     canStart:
       videoReady &&
@@ -239,6 +239,7 @@ export function useSmileDemo(): SmileDemoController {
     selectBilibili,
     selectResolvedBilibili,
     openCamera: () => void startCamera(),
+    closeCamera: stopCamera,
     retryDetector,
     startCalibration,
     startChallenge,

@@ -53,7 +53,11 @@ export function ChallengePanel(props: ChallengePanelProps) {
   return (
     <section className="section challenge-section">
       <h2>{t.challenge.title}</h2>
-      <div className={`player-shell${active ? ' player-active' : ''}${portrait ? ' portrait-player' : ''}`}>
+      <div
+        className={`player-shell${active ? ' player-active' : ' player-locked'}${portrait ? ' portrait-player' : ''}`}
+        aria-disabled={!active}
+        inert={!active}
+      >
         <div
           ref={props.setPlayerContainer}
           className="artplayer-host"

@@ -46,6 +46,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .calibration-progress { width: 100%; }
 progress { width: 100%; accent-color: #62dcff; }
 .player-shell { position: relative; display: flex; justify-content: center; width: 100%; min-height: 180px; overflow: hidden; border-radius: 11px; background: #03070e; }
+.player-shell.player-locked .artplayer-host { pointer-events: none; }
 .artplayer-host { position: relative; z-index: 1; width: 100%; min-width: 0; aspect-ratio: 16 / 9; }
 .portrait-player { width: min(100%, 430px); margin-inline: auto; }
 .portrait-player .artplayer-host { width: 100%; }
@@ -124,8 +125,15 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: .7rem; }
 .stats-grid div { display: flex; flex-direction: column; padding: 1rem; border-radius: 12px; background: #f8eff5; text-align: center; }
 .stats-grid strong { font-size: 1.6rem; color: #ad2e5b; }
-.heatmap { display: flex; align-items: end; gap: 5px; min-height: 130px; margin-top: 1rem; padding: 1rem; border-radius: 12px; background: #251b2b; }
-.heatmap div { min-width: 10px; flex: 1; border-radius: 5px 5px 0 0; background: linear-gradient(#ff9a78,#df315d); }
+.heatmap-scroll { margin-top: 1rem; overflow-x: auto; border-radius: 12px; background: #251b2b; scrollbar-color: #df315d #3a2c3d; }
+.heatmap-scroll:focus-visible { outline: 3px solid rgba(223,49,93,.45); outline-offset: 3px; }
+.heatmap { display: flex; align-items: stretch; gap: .65rem; min-width: max-content; height: 220px; padding: 1rem; }
+.heatmap-column { display: grid; grid-template-rows: 1.5rem 1fr auto; width: 78px; min-width: 78px; color: #fff; text-align: center; }
+.heatmap-count { align-self: center; font-size: .8rem; }
+.heatmap-plot { position: relative; display: flex; align-items: end; justify-content: center; min-height: 130px; }
+.heatmap-bar { display: block; width: 34px; min-height: 12px; border-radius: 7px 7px 2px 2px; background: linear-gradient(#ffb077,#df315d); box-shadow: 0 5px 20px rgba(223,49,93,.3); }
+.heatmap-label { padding-top: .45rem; color: #e9dbe7; font-size: .72rem; white-space: nowrap; }
+.heatmap-empty { min-height: 80px; display: grid; place-items: center; padding: 1rem; border-radius: 12px; background: #f8eff5; text-align: center; }
 .button-link { display: inline-block; padding: .8rem 1rem; border-radius: 9px; font-weight: 750; text-decoration: none; }
 .manage-result { margin: 1rem 0; padding: 1rem; border-radius: 14px; background: #f8eff5; text-align: center; }
 .privacy-note { color: #71465e; border-color: #e1bfd1; background: #fff0f4; }
@@ -143,4 +151,30 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 .camera-bubble > h2, .camera-bubble .camera-actions { display: none; }
 .camera-bubble .camera-layout { display: block; }
 .camera-bubble .camera-preview { aspect-ratio: 1; border-radius: 50%; }
-@media (max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}.link-box{grid-template-columns:1fr}.link-box code{white-space:normal;overflow-wrap:anywhere}.button-row>*{width:100%}.settlement{border-radius:20px}}
+.stage-progress { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: .35rem; margin: 1rem 0 1.25rem; padding: 0; list-style: none; }
+.stage-progress li { display: flex; min-width: 0; align-items: center; gap: .4rem; color: #9b899d; font-size: .72rem; white-space: nowrap; }
+.stage-progress li::after { content: ''; height: 2px; min-width: 8px; flex: 1; background: #e7dbe5; }
+.stage-progress li:last-child::after { display: none; }
+.stage-progress li span { display: grid; width: 1.6rem; height: 1.6rem; flex: 0 0 auto; place-items: center; border: 1px solid #d7c7d5; border-radius: 50%; background: #fff; font-weight: 800; }
+.stage-progress li.current { color: #b92552; font-weight: 800; }
+.stage-progress li.current span, .stage-progress li.done span { color: #fff; border-color: #dc3d62; background: #dc3d62; }
+.stage-progress li.done::after { background: #dc3d62; }
+.challenge-stage { min-height: 420px; }
+.challenge-stage > * { animation: stage-enter .24s ease-out; }
+.stage-heading { margin: 1rem 0; padding: 1.25rem; border: 1px solid rgba(83,47,81,.12); border-radius: 16px; background: rgba(255,255,255,.65); }
+.stage-heading h2 { margin-bottom: .4rem; font-size: clamp(1.35rem,3vw,1.8rem); }
+.stage-heading > p:last-child { margin-bottom: 0; color: #706274; }
+.ready-heading .video-meta { margin-top: 1rem; }
+.camera-compact { padding: .8rem; }
+.camera-compact h2 { font-size: .9rem; }
+.camera-compact .camera-layout { grid-template-columns: 160px 1fr; align-items: center; }
+.camera-compact .camera-preview { aspect-ratio: 4 / 3; }
+.challenge-player-step { display: contents; }
+.player-loading { text-align: center; }
+.submitting-panel { min-height: 300px; display: grid; align-content: center; justify-items: center; text-align: center; }
+.submitting-panel p { max-width: 580px; }
+.submit-spinner { width: 44px; height: 44px; margin-top: 1.2rem; border: 4px solid #eddce5; border-top-color: #d92f5b; border-radius: 50%; animation: submit-spin .8s linear infinite; }
+@keyframes stage-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes submit-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .challenge-stage > *, .submit-spinner { animation: none; } }
+@media (max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}.link-box{grid-template-columns:1fr}.link-box code{white-space:normal;overflow-wrap:anywhere}.button-row>*{width:100%}.settlement{border-radius:20px}.stage-progress{display:flex;overflow-x:auto;padding-bottom:.35rem;scrollbar-width:none}.stage-progress::-webkit-scrollbar{display:none}.stage-progress li{flex:0 0 auto}.stage-progress li::after{width:16px;flex:none}.stage-progress li:not(.current):not(.done){font-size:0}.stage-progress li:not(.current):not(.done) span{font-size:.72rem}.stage-progress li:not(.current):not(.done)::after{font-size:initial}.camera-compact .camera-layout{grid-template-columns:110px 1fr}.heatmap-column{width:72px;min-width:72px}}
