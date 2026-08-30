@@ -10,9 +10,12 @@
 npm install
 Copy-Item .dev.vars.example .dev.vars
 npx wrangler d1 migrations apply bengbeng-bomb-db --local
+npm run seed:leaderboard # 可选：填充本地排行榜测试数据
 npm run build
 npx wrangler dev
 ```
+
+`npm run seed:leaderboard` 只写入本地 D1，用于预览排行榜；不会修改远程数据库。
 
 编辑 `.dev.vars`，填写至少 32 字符的随机 `APP_SIGNING_SECRET` 和已有 bilidirect 服务的 `BILIDIRECT_API_KEY`。在 `wrangler.jsonc` 中把 `BILIDIRECT_BASE_URL` 改为已有后端地址。不要提交 `.dev.vars`。
 

@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:worker": "wrangler dev --ip 0.0.0.0",
     "dev:phone": "npm run build && wrangler dev --tunnel",
+    "seed:leaderboard": "wrangler d1 execute bengbeng-bomb-db --local --file scripts/seed-leaderboard.sql",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "type-check": "tsc -b --pretty false",
