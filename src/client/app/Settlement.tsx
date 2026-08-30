@@ -2,6 +2,7 @@ import { createShareCard, downloadBlob } from '../sharing/card';
 import type { AggregateStats, ChallengePayload, ScorePoint } from '../../shared/contracts';
 import { createHeatmapBars } from './heatmap';
 import { ScoreTraceChart } from './ScoreTraceChart';
+import { CopyButton } from './CopyButton';
 
 interface SettlementResult {
   outcome: 'held' | 'failed';
@@ -37,7 +38,7 @@ export function Settlement({
   const content = (
     <>
       <section className={`settlement ${held ? 'held' : 'failed'}`}>
-        <p className="eyebrow">CHALLENGE COMPLETE</p>
+        <p className="eyebrow">挑战完成</p>
         <h1>{held ? '你是真能绷' : '炸了！'}</h1>
         <div className="time-score"><strong>{result.elapsedSeconds.toFixed(1)}</strong><span>秒</span></div>
         <p>{held ? '完整看完，一次都没笑。' : '这个瞬间击穿了你的防线。'}</p>
@@ -45,10 +46,10 @@ export function Settlement({
       <ScoreTraceChart points={result.scoreTrace ?? []} outcome={result.outcome} durationSeconds={challenge.video.duration} />
       <Stats stats={result.stats} />
       <section className="section">
-        <h2>晒出战报</h2>
+        <h2>分享结果</h2>
         <div className="button-row">
-          <button type="button" onClick={() => void share()}>下载战报图</button>
-          <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(result.reportUrl)}>复制公开报告</button>
+          <button type="button" onClick={() => void share()}>下载结果图</button>
+          <CopyButton value={result.reportUrl} label="复制公开战报链接" />
           <a
             className="button-link"
             href="/"
@@ -65,15 +66,15 @@ export function Stats({ stats }: { stats: AggregateStats }) {
   const bars = createHeatmapBars(stats.buckets);
   return (
     <section className="section">
-      <h2>匿名战况</h2>
+      <h2>大家的挑战情况</h2>
       <div className="stats-grid">
-        <div><strong>{stats.total}</strong><span>参与</span></div>
-        <div><strong>{stats.held}</strong><span>绷住</span></div>
-        <div><strong>{(stats.failureRate * 100).toFixed(0)}%</strong><span>爆炸率</span></div>
-        <div><strong>{stats.averageElapsedSeconds.toFixed(1)}s</strong><span>平均坚持</span></div>
+        <div><strong>{stats.total}</strong><span>挑战次数</span></div>
+        <div><strong>{stats.held}</strong><span>完整看完</span></div>
+        <div><strong>{(stats.failureRate * 100).toFixed(0)}%</strong><span>没绷住比例</span></div>
+        <div><strong>{stats.averageElapsedSeconds.toFixed(1)}s</strong><span>平均坚持时间</span></div>
       </div>
       {bars.length ? (
-        <div className="heatmap-scroll" tabIndex={0} aria-label="失败时间分布，可横向滚动">
+        <div className="heatmap-scroll" tabIndex={0} aria-label="没绷住的时间分布，可左右滑动查看">
           <div className="heatmap" role="list">
             {bars.map((bar) => (
               <div className="heatmap-column" role="listitem" aria-label={bar.accessibleLabel} key={bar.startSeconds}>
@@ -86,7 +87,7 @@ export function Stats({ stats }: { stats: AggregateStats }) {
             ))}
           </div>
         </div>
-      ) : <p className="muted heatmap-empty">还没有失败时间数据，你是第一批挑战者。</p>}
+      ) : <p className="muted heatmap-empty">还没有人记录没绷住的时间，你是第一批挑战者。</p>}
     </section>
   );
 }

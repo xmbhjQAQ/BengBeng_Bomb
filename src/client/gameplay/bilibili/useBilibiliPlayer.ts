@@ -37,7 +37,7 @@ export interface BilibiliPlayerMediaHandlers {
 
 function parseDanmakuXml(xml: string): DanmakuItem[] {
   const parsed = new DOMParser().parseFromString(xml, 'application/xml');
-  if (parsed.querySelector('parsererror')) throw new Error('弹幕 XML 无法解析');
+  if (parsed.querySelector('parsererror')) throw new Error('弹幕暂时无法显示，但不影响挑战。');
   return Array.from(parsed.querySelectorAll('d')).flatMap((item) => {
     const values = item.getAttribute('p')?.split(',') ?? [];
     const time = Number(values[0]);
@@ -158,7 +158,7 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
       if (!danmakuUrl) return [];
       try {
         const response = await fetch(danmakuUrl, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`弹幕请求失败（HTTP ${response.status}）`);
+        if (!response.ok) throw new Error('弹幕暂时无法加载，但不影响挑战。');
         const items = parseDanmakuXml(await response.text());
         return items;
       } catch {

@@ -11,7 +11,7 @@ body { min-width: 320px; margin: 0; background: radial-gradient(circle at 15% 0%
 button, input { font: inherit; }
 button { cursor: pointer; }
 
-.page { width: min(100% - 2rem, 1080px); margin: 0 auto; padding: 3.5rem 0 5rem; }
+.page { width: min(100% - 2rem, 1080px); min-height: 100vh; margin: 0 auto; padding: 3.5rem 0 5rem; }
 .hero { margin-bottom: 1.5rem; }
 .eyebrow { margin: 0 0 .45rem; color: #65d9ff; font-size: .75rem; font-weight: 800; letter-spacing: .18em; }
 h1 { margin: 0; color: #fff; font-size: clamp(2.1rem, 6vw, 4.5rem); line-height: 1.05; letter-spacing: -.045em; }
@@ -92,7 +92,17 @@ dd { margin: .2rem 0 0; color: #f3f7fd; font-weight: 700; overflow-wrap: anywher
 
 /* Product shell */
 :root { color: #2a202c; background: #fff8f4; }
-body { background: radial-gradient(circle at 12% 0%, #ffe1dc 0, #fff8f4 42%, #f7f0ff 100%); }
+html { min-height: 100%; background: #fff8f4; }
+body { min-height: 100vh; background: #fff8f4; }
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse 92% 68% at 8% 0%, rgba(255, 225, 220, .96) 0%, rgba(255, 225, 220, 0) 100%),
+    radial-gradient(ellipse 88% 72% at 94% 0%, rgba(247, 240, 255, .98) 0%, rgba(247, 240, 255, 0) 100%),
+    #fff8f4;
+  background-repeat: no-repeat;
+}
 .eyebrow { color: #d92f5b; }
 h1, h2 { color: #251b2b; }
 .intro { color: #66586c; }
@@ -109,9 +119,9 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 .video-title { color: #2a202c; }
 .video-cover img { width: 100%; height: 100%; object-fit: cover; }
 .clamp { display: -webkit-box; max-width: 650px; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.link-box { display: grid; grid-template-columns: 1fr auto; gap: .5rem; margin: .8rem 0; padding: 1rem; border-radius: 12px; background: #f7edf4; }
+.link-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin: .8rem 0; padding: 1rem; border-radius: 12px; background: #f7edf4; }
 .link-box strong { grid-column: 1 / -1; }
-.link-box code { overflow: hidden; color: #554459; text-overflow: ellipsis; white-space: nowrap; }
+.link-box code { min-width: 0; overflow: hidden; color: #554459; text-overflow: ellipsis; white-space: nowrap; }
 .link-box.private { border: 1px dashed #b66b32; background: #fff5e9; }
 .button-row { display: flex; flex-wrap: wrap; gap: .65rem; }
 .consent li { margin: .8rem 0; }
@@ -177,7 +187,7 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 @keyframes stage-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes submit-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .challenge-stage > *, .submit-spinner { animation: none; } }
-@media (max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}.link-box{grid-template-columns:1fr}.link-box code{white-space:normal;overflow-wrap:anywhere}.button-row>*{width:100%}.settlement{border-radius:20px}.stage-progress{display:flex;overflow-x:auto;padding-bottom:.35rem;scrollbar-width:none}.stage-progress::-webkit-scrollbar{display:none}.stage-progress li{flex:0 0 auto}.stage-progress li::after{width:16px;flex:none}.stage-progress li:not(.current):not(.done){font-size:0}.stage-progress li:not(.current):not(.done) span{font-size:.72rem}.stage-progress li:not(.current):not(.done)::after{font-size:initial}.camera-compact .camera-layout{grid-template-columns:110px 1fr}.heatmap-column{width:72px;min-width:72px}}
+@media (max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}.link-box{grid-template-columns:1fr}.link-box code{white-space:nowrap}.button-row>*{width:100%}.settlement{border-radius:20px}.stage-progress{display:flex;overflow-x:auto;padding-bottom:.35rem;scrollbar-width:none}.stage-progress::-webkit-scrollbar{display:none}.stage-progress li{flex:0 0 auto}.stage-progress li::after{width:16px;flex:none}.stage-progress li:not(.current):not(.done){font-size:0}.stage-progress li:not(.current):not(.done) span{font-size:.72rem}.stage-progress li:not(.current):not(.done)::after{font-size:initial}.camera-compact .camera-layout{grid-template-columns:110px 1fr}.heatmap-column{width:72px;min-width:72px}}
 
 /* Score trace */
 .score-trace-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; }

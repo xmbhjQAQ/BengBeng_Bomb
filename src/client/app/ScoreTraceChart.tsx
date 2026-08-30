@@ -18,23 +18,23 @@ export function ScoreTraceChart({
     return (
       <section className="section score-trace-section" aria-labelledby="score-trace-title">
         <h2 id="score-trace-title">本次表情变化</h2>
-        <p className="muted score-trace-empty">本次没有足够的有效人脸样本，无法绘制变化曲线。</p>
+        <p className="muted score-trace-empty">这次没有记录到足够的面部变化，暂时无法绘制曲线。</p>
       </section>
     );
   }
   const peak = model.points.reduce((best, point) => point.score > best.score ? point : best);
   const active = selected === null ? model.points.at(-1)! : model.points[selected]!;
-  const markerLabel = outcome === 'failed' ? '爆炸点' : '挑战终点';
+  const markerLabel = outcome === 'failed' ? '没绷住时刻' : '挑战终点';
   const markerTime = outcome === 'failed' ? model.points.at(-1)!.timeSeconds : durationSeconds;
   return (
     <section className="section score-trace-section" aria-labelledby="score-trace-title">
       <div className="score-trace-heading">
-        <div><p className="step">表情量化</p><h2 id="score-trace-title">本次表情变化</h2></div>
+        <div><p className="step">挑战记录</p><h2 id="score-trace-title">本次表情变化</h2></div>
         <p className="score-trace-reading" aria-live="polite">
           {active.timeSeconds.toFixed(1)} 秒 · 难绷程度 {active.score}
         </p>
       </div>
-      <p className="hint">0 表示表情稳定，数值越高越接近绷不住。点击或聚焦数据点可读数。</p>
+      <p className="hint">0 表示表情稳定，数值越高越接近绷不住。点按曲线上的数据点可查看当时的程度。</p>
       <div className="score-trace-scroll" tabIndex={0} aria-label="表情变化折线图，可横向查看">
         <svg className="score-trace-chart" viewBox={`0 0 ${SCORE_CHART.width} ${SCORE_CHART.height}`} role="img" aria-labelledby="score-trace-svg-title score-trace-svg-desc">
           <title id="score-trace-svg-title">挑战过程中的难绷程度折线图</title>
@@ -67,9 +67,9 @@ export function ScoreTraceChart({
         </svg>
       </div>
       <div className="score-trace-summary">
-        <span><strong>{peak.score}</strong>峰值</span>
-        <span><strong>{peak.timeSeconds.toFixed(1)}s</strong>峰值时刻</span>
-        <span><strong>{model.dangerCount}</strong>个危险采样点</span>
+        <span><strong>{peak.score}</strong>最高程度</span>
+        <span><strong>{peak.timeSeconds.toFixed(1)}s</strong>最高时刻</span>
+        <span><strong>{model.dangerCount}</strong>个危险时刻</span>
         <span><strong>{markerTime.toFixed(1)}s</strong>{markerLabel}</span>
       </div>
     </section>

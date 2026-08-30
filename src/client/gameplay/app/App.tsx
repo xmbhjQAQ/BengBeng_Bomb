@@ -21,7 +21,7 @@ export function App() {
   return (
     <main className="page">
       <header className="hero">
-        <p className="eyebrow">CORE GAMEPLAY TEST</p>
+        <p className="eyebrow">单人挑战</p>
         <h1>{t.app.title}</h1>
         <p className="intro">{t.app.intro}</p>
         <p className="privacy-note">{t.app.privacy}</p>

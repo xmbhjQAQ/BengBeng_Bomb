@@ -48,10 +48,10 @@ export function HomeView({ navigate }: { navigate(path: string): void }) {
     </header>
     <section id="panel-compose" role="tabpanel" aria-labelledby="tab-compose" hidden={tab!=='compose'} className="home-panel"><ComposerView embedded prefill={prefill}/></section>
     <section id="panel-leaderboard" role="tabpanel" aria-labelledby="tab-leaderboard" hidden={tab!=='leaderboard'} className="home-panel leaderboard-panel">
-      <div className="leaderboard-heading"><div><p className="step">永久累计 · 匿名数据</p><h2>难绷排行榜</h2></div><p>爆炸率和平均坚持时间综合计算，看看哪些视频最容易让人破防。</p></div>
+      <div className="leaderboard-heading"><div><p className="step">永久累计 · 大家记录</p><h2>难绷排行榜</h2></div><p>综合大家的坚持时间和没绷住的比例，看看哪些视频最容易让人破防。</p></div>
       {entries===null&&!error&&<p className="leaderboard-state" role="status">正在加载难绷排行…</p>}
       {error&&<div className="leaderboard-state" role="alert"><p>{error}</p><button type="button" className="secondary" onClick={()=>void load()}>重新加载</button></div>}
-      {entries?.length===0&&<p className="leaderboard-state">还没有视频达到上榜门槛，来完成第一批挑战吧。</p>}
+      {entries?.length===0&&<p className="leaderboard-state">还没有足够的挑战记录，来完成第一批挑战吧。</p>}
       {entries&&entries.length>0&&<ol className="leaderboard-list">{entries.map((entry)=><li key={`${entry.video.bvid}-${entry.video.page}`} className={entry.rank<=3?`leaderboard-card top-${entry.rank}`:'leaderboard-card'}>
         <div className="leaderboard-rank" aria-label={`第 ${entry.rank} 名`}>{entry.rank<=3?['🥇','🥈','🥉'][entry.rank-1]:`#${entry.rank}`}</div>
         <div className="leaderboard-cover">{entry.video.cover?<img src={entry.video.cover} referrerPolicy="no-referrer" alt=""/>:<span>无封面</span>}</div>

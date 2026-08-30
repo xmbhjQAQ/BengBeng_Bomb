@@ -54,10 +54,9 @@ export function BilibiliSourcePanel({
         <div className="video-meta">
           <BilibiliCover cover={selection.cover} pic={selection.pic} />
           <div>
-            <p className="video-title">{selection.title || selection.bvid}</p>
+            <p className="video-title">{selection.title || '已选择视频'}</p>
             <p className="video-subtitle">
-              BV{selection.bvid.slice(2)}
-              {selection.duration ? ` · ${formatDuration(selection.duration)}` : ''}
+              {selection.duration ? `时长 ${formatDuration(selection.duration)}` : '已选择视频'}
               {typeof selection.view === 'number' ? ` · ${formatCount(selection.view)} 播放` : ''}
             </p>
           </div>

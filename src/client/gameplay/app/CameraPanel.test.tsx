@@ -21,12 +21,12 @@ describe('CameraPanel detector diagnostics', () => {
   it('keeps the friendly error and puts sanitized detail in a collapsed disclosure', () => {
     render(<CameraPanel {...baseProps} />);
 
-    expect(screen.getByText(/本地检测模型加载失败/)).toBeInTheDocument();
+    expect(screen.getByText(/面部检测暂时没准备好/)).toBeInTheDocument();
     const detail = screen.getByText(baseProps.detectorError);
     const disclosure = detail.closest('details');
     expect(disclosure).not.toHaveAttribute('open');
-    expect(screen.getByText('查看技术详情')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重新加载模型' })).toBeInTheDocument();
+    expect(screen.getByText('查看错误详情')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新准备检测' })).toBeInTheDocument();
   });
 
   it('does not render technical detail outside the error state', () => {
@@ -37,7 +37,7 @@ describe('CameraPanel detector diagnostics', () => {
       />,
     );
 
-    expect(container).not.toHaveTextContent('查看技术详情');
+    expect(container).not.toHaveTextContent('查看错误详情');
     expect(container).not.toHaveTextContent(baseProps.detectorError);
   });
 });

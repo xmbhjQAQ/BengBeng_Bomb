@@ -161,12 +161,12 @@ export function ChallengeView({ token }: { token: string }) {
   };
 
   if (openError && !opened) return <Message title="挑战无法打开" detail={openError} />;
-  if (!opened) return <Message title="正在拆弹…" detail="正在验证挑战并刷新视频直链" />;
+  if (!opened) return <Message title="正在拆弹…" detail="正在准备挑战视频，请稍候。" />;
   if (opened.session?.state === 'completed' && !completed) {
-    return <Message title="这枚炸弹已经引爆过了" detail="每个挑战只记录一次结果，请让发起者查看私密结果入口。" />;
+    return <Message title="这枚炸弹已经引爆过了" detail="这次挑战已经完成，每个挑战只能记录一次结果。请回到发起者保存的结果入口查看详情。" />;
   }
   if (opened.session?.state === 'started' && !attempt) {
-    return <Message title="挑战已经开始" detail="一次性挑战不能由另一个会话重新接管。" />;
+    return <Message title="挑战已经开始" detail="这次挑战已经在别处开始，请从原来的页面继续。" />;
   }
 
   const stage = recipientStage({
@@ -221,11 +221,11 @@ export function ChallengeView({ token }: { token: string }) {
             <VideoIntro video={opened.challenge.video} />
             <h2>开始前，请确认隐私说明</h2>
             <ul>
-              <li>摄像头画面和人脸特征只在你的浏览器中检测，不上传、不保存。</li>
-              <li>只上传最终结果、坚持秒数，以及每秒最多一个的 0–100 表情程度值。</li>
-              <li>量化曲线与挑战结果使用相同保留时间，结果过期或主动销毁时同步删除。</li>
-              <li>不上传摄像头图像、人脸特征、landmarks 或逐帧原始检测数据。</li>
-              <li>脱敏后的结果会计入这条视频的匿名统计，销毁私人结果后仍会保留。</li>
+              <li>摄像头画面和面部变化只在你的浏览器中处理，不会上传或保存。</li>
+              <li>挑战结束后只会提交结果、坚持时间和简化后的表情变化。</li>
+              <li>这份结果和表情变化会在有效期结束或被删除后一起移除。</li>
+              <li>不会上传摄像头照片或可识别你的面部信息。</li>
+              <li>匿名结果会帮助大家了解这段视频的难度；删除私密结果不会影响统计。</li>
             </ul>
             <button type="button" onClick={() => { setAccepted(true); demo.openCamera(); }}>
               我知道了，接受挑战
@@ -237,7 +237,7 @@ export function ChallengeView({ token }: { token: string }) {
             <section className="stage-heading">
               <p className="step">02 · 人脸校准</p>
               <h2>保持自然表情，看向摄像头</h2>
-              <p>模型准备好后进行约 3 秒校准。此时不会播放挑战视频，也不会消耗挑战资格。</p>
+              <p>准备好后会用约 3 秒记录你的自然表情。此时不会播放视频，也不会开始挑战。</p>
             </section>
             <CameraPanel {...cameraProps} />
           </>
@@ -248,14 +248,14 @@ export function ChallengeView({ token }: { token: string }) {
               <section className="stage-heading ready-heading" key="ready-heading">
                 <p className="step">03 · 准备挑战</p>
                 <h2>校准成功，最后确认一下</h2>
-                <p>调整音量和坐姿。只有点击“开始挑战”后，才会占用这次挑战资格。</p>
+                <p>调整音量和坐姿。点击“开始挑战”后才正式计时。</p>
                 <VideoIntro video={opened.challenge.video} />
               </section>
             )}
             <CameraPanel key="camera" {...cameraProps} compact={stage === 'ready'} bubble={stage === 'active'} />
             <div className="challenge-player-step" key="player">{player}</div>
             {stage === 'ready' && !demo.videoReady && !demo.playerError && (
-              <p className="hint player-loading" role="status">正在准备视频，按钮会在画面就绪后开放…</p>
+              <p className="hint player-loading" role="status">视频准备好后就可以开始。</p>
             )}
             {stage === 'ready' && startError && <p className="error" role="alert">{startError}</p>}
             {stage === 'ready' && starting && <p className="hint" role="status">正在锁定本次挑战…</p>}
@@ -272,11 +272,11 @@ export function ChallengeView({ token }: { token: string }) {
         {stage === 'submitting' && (
           <section className="section submitting-panel" aria-live="polite">
             <p className="step">05 · 提交结果</p>
-            <h2>{submission.status === 'error' ? '结果暂时没有提交成功' : '正在封存挑战结果…'}</h2>
+            <h2>{submission.status === 'error' ? '结果暂时没有保存成功' : '正在保存挑战结果…'}</h2>
             <p>
               {submission.status === 'error'
-                ? '本地结果仍保留在当前页面，可以安全重试，不会重复计算匿名统计。'
-                : '正在提交最终结果、坚持秒数和降采样表情曲线；摄像头图像和人脸特征仍只留在本机。'}
+                ? '结果还在当前页面，重新提交即可，不会重复计入统计。'
+                : '正在保存最终结果、坚持时间和简化后的表情变化；摄像头画面不会上传。'}
             </p>
             {submission.status === 'error' && (
               <>
@@ -321,7 +321,7 @@ function VideoIntro({ video }: { video: ChallengePayload['video'] }) {
       </div>
       <div>
         <p className="video-title">{video.title}</p>
-        <p className="video-subtitle">{Math.round(video.duration)} 秒 · {video.bvid}</p>
+        <p className="video-subtitle">{Math.round(video.duration)} 秒视频</p>
         {video.description && <p className="muted clamp">{video.description}</p>}
       </div>
     </div>

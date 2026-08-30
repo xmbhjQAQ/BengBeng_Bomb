@@ -12,7 +12,7 @@ export function MetricsPanel({ phase, metrics }: MetricsPanelProps) {
   const value = (input: number | null, formatter: (number: number) => string) =>
     input === null ? '—' : formatter(input);
   return (
-    <details className="section metrics" open>
+    <details className="section metrics">
       <summary>{t.metrics.title}</summary>
       <dl className="metrics-grid">
         <div><dt>{t.metrics.phase}</dt><dd>{phaseText(phase)}</dd></div>

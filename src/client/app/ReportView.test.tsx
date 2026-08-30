@@ -15,7 +15,7 @@ describe('ReportView',()=>{
     render(<ReportView token="report-token"/>);
     expect(await screen.findByText('单人挑战')).toBeVisible();
     expect(screen.getByRole('img',{name:/挑战过程中的难绷程度折线图/})).toBeVisible();
-    expect(screen.getByRole('button',{name:/12.0 秒，难绷程度 76，爆炸点/})).toBeVisible();
+    expect(screen.getByRole('button',{name:/12.0 秒，难绷程度 76，没绷住时刻/})).toBeVisible();
     expect(screen.queryByText(/发起者|挑战你/)).not.toBeInTheDocument();
   });
 });

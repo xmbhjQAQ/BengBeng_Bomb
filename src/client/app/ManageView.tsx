@@ -5,9 +5,9 @@ import { Stats } from './Settlement';
 import type { AggregateStats, ManageResult } from '../../shared/contracts';
 
 const params=()=>new URLSearchParams(location.hash.slice(1));
-export function ManageView(){const [token]=useState(()=>params().get('m')||'');const [result,setResult]=useState<ManageResult|null>(null);const [error,setError]=useState('');const load=async()=>{setError('');try{setResult(await post<ManageResult>('/api/manage/result',{},token));}catch(e){setError(e instanceof Error?e.message:'查询失败');}};const destroy=async()=>{if(!confirm('确定销毁私人结果吗？匿名统计贡献仍会保留。'))return;try{await apiRequest('/api/manage/result',{method:'DELETE',headers:{Authorization:`Bearer ${token}`}});setResult({status:'deleted'});}catch(e){setError(e instanceof Error?e.message:'销毁失败');}};return <main className="page"><header className="hero compact"><p className="eyebrow">PRIVATE RESULT</p><h1>私密结果入口</h1><p className="intro">此页面不会自动轮询。管理凭证仅保存在地址栏片段中，不会随普通请求发送。</p></header><section className="section">{!token?<p className="error">管理链接不完整。</p>:<><button onClick={()=>void load()}>刷新状态</button>{result&&<ResultStatus result={result}/>} {result&&result.status!=='deleted'&&<button className="danger" onClick={()=>void destroy()}>销毁私人结果</button>}</>}{error&&<p className="error">{error}</p>}<p className="warning">销毁或到期会删除私人会话；已经完全脱敏的匿名次数和时间桶不会回退。</p></section></main>}
+export function ManageView(){const [token]=useState(()=>params().get('m')||'');const [result,setResult]=useState<ManageResult|null>(null);const [error,setError]=useState('');const load=async()=>{setError('');try{setResult(await post<ManageResult>('/api/manage/result',{},token));}catch(e){setError(e instanceof Error?e.message:'查询失败');}};const destroy=async()=>{if(!confirm('确定删除这次私密结果吗？删除后无法恢复，公开统计仍会保留。'))return;try{await apiRequest('/api/manage/result',{method:'DELETE',headers:{Authorization:`Bearer ${token}`}});setResult({status:'deleted'});}catch(e){setError(e instanceof Error?e.message:'删除失败');}};return <main className="page"><header className="hero compact"><p className="eyebrow">私密结果</p><h1>私密结果入口</h1><p className="intro">这是本次挑战的私密结果页。点击“刷新状态”查看最新结果，请勿把此页分享给其他人。</p></header><section className="section">{!token?<p className="error">结果入口不完整，请使用发起挑战时保存的链接。</p>:<><button type="button" onClick={()=>void load()}>刷新状态</button>{result&&<ResultStatus result={result}/>} {result&&result.status!=='deleted'&&result.status!=='expired'&&<button type="button" className="danger" onClick={()=>void destroy()}>删除私密结果</button>}</>}{error&&<p className="error">{error}</p>}<p className="warning">结果到期或被删除后将无法恢复；公开统计仍会保留。</p></section></main>}
 function ResultStatus({ result }: { result: ManageResult }) {
-  const labels = { unopened: '尚未打开', opened: '已经打开', started: '挑战进行中', completed: '挑战已完成', deleted: '已销毁', expired: '已过期' };
+  const labels = { unopened: '尚未打开或已销毁', opened: '等待挑战开始', started: '挑战进行中', completed: '挑战已完成', deleted: '尚未打开或已销毁', expired: '结果已过期' };
   if (result.status !== 'completed') return <div className="manage-result"><h2>{labels[result.status]}</h2></div>;
   return <CompletedResult result={result} />;
 }
@@ -20,17 +20,17 @@ function CompletedResult({ result }: { result: ManageResult }) {
   const stats = isRenderableStats(result.stats) ? result.stats : null;
   return <>
     <section className={`settlement ${outcome === 'held' ? 'held' : 'failed'}`}>
-      <p className="eyebrow">PRIVATE RESULT</p>
+      <p className="eyebrow">私密结果</p>
       <h1>{outcome === 'held' ? '你是真能绷' : outcome === 'failed' ? '炸了！' : '挑战已完成'}</h1>
       {result.video?.title && <h2>{result.video.title}</h2>}
       {hasElapsed ? <div className="time-score"><strong>{result.elapsedSeconds!.toFixed(1)}</strong><span>秒</span></div> : <p>结果秒数暂不可用。</p>}
       <p>{outcome === 'held' ? '完整看完，一次都没笑。' : outcome === 'failed' ? '这个瞬间击穿了你的防线。' : '结果记录完整，但结算状态缺少必要信息。'}</p>
     </section>
     {hasVideo && chartOutcome ? <ScoreTraceChart points={result.scoreTrace ?? []} outcome={chartOutcome} durationSeconds={result.video!.duration} /> : (
-      <section className="section score-trace-section"><h2>本次表情变化</h2><p className="muted score-trace-empty">这条私密结果缺少可用的视频或曲线数据，无法绘制变化曲线。</p></section>
+      <section className="section score-trace-section"><h2>本次表情变化</h2><p className="muted score-trace-empty">这条结果的详细变化暂时不可用，但坚持时间仍可查看。</p></section>
     )}
-    {stats ? <Stats stats={stats} /> : <section className="section"><h2>匿名战况</h2><p className="muted">匿名统计暂不可用。</p></section>}
-    {typeof result.expiresAt === 'number' && Number.isFinite(result.expiresAt) && result.expiresAt > 0 && <p className="hint private-result-expiry">私密详情将保留至 {new Date(result.expiresAt * 1000).toLocaleString()}，到期后曲线和本次结果会一起删除。</p>}
+    {stats ? <Stats stats={stats} /> : <section className="section"><h2>大家的挑战情况</h2><p className="muted">大家的挑战情况暂时无法加载。</p></section>}
+    {typeof result.expiresAt === 'number' && Number.isFinite(result.expiresAt) && result.expiresAt > 0 && <p className="hint private-result-expiry">这份私密结果会保留一段时间，之后将无法查看。</p>}
   </>;
 }
 

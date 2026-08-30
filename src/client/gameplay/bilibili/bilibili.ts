@@ -174,7 +174,7 @@ function isQqShareUrl(url: URL) {
 
 export function parseBilibiliInput(input: unknown): { kind: 'bvid'; bvid: string; raw: string } {
   const raw = String(input ?? '').trim();
-  if (!raw) throw new BilibiliInputError('请先粘贴一个 B站视频链接。');
+  if (!raw) throw new BilibiliInputError('请先粘贴一个 B 站视频链接。');
 
   const url = parseUrl(raw);
   const hostname = url.hostname.toLowerCase();
@@ -184,17 +184,17 @@ export function parseBilibiliInput(input: unknown): { kind: 'bvid'; bvid: string
   }
   if (SHORT_LINK_HOSTS.has(hostname)) {
     throw new BilibiliInputError(
-      '暂不解析 b23.tv 等分享短链，请直接粘贴跳转后的 B站 BV 视频链接。',
+      '请先打开分享短链，再复制打开后的 B 站视频页面地址。',
       'UNSUPPORTED_SHORT_LINK',
     );
   }
   if (isQqShareUrl(url)) {
     throw new BilibiliInputError(
-      '暂不解析 QQ 小程序分享链接，请直接粘贴 B站 BV 视频链接。',
+      '请先打开分享内容，再复制对应的 B 站视频页面地址。',
       'UNSUPPORTED_QQ_SHARE',
     );
   }
-  throw new BilibiliInputError('暂不支持这个链接，请粘贴 bilibili.com/video/BV... 视频页链接。');
+  throw new BilibiliInputError('这个地址暂时无法使用，请粘贴 B 站视频页面地址。');
 }
 
 function normalizeApiBaseUrl(apiBaseUrl: string): string {
@@ -208,7 +208,7 @@ function normalizeApiBaseUrl(apiBaseUrl: string): string {
     if (!url) throw new Error('relative URL needs a browser origin');
     return url.href.replace(/\/$/, '');
   } catch {
-    throw new BilibiliApiError('接口地址无效，请检查配置中的 apiBaseUrl。');
+    throw new BilibiliApiError('视频服务暂时不可用，请稍后重试。');
   }
 }
 
@@ -255,8 +255,8 @@ export async function parseVideoByBvid(options: {
     signal,
   } = options;
   const normalizedBvid = extractBvid(bvid);
-  if (!normalizedBvid) throw new BilibiliInputError('没有找到有效的 BV 号。');
-  if (typeof fetchImpl !== 'function') throw new BilibiliApiError('当前环境不支持网络请求。');
+  if (!normalizedBvid) throw new BilibiliInputError('这段视频链接无法识别，请重新选择。');
+  if (typeof fetchImpl !== 'function') throw new BilibiliApiError('当前浏览器无法连接视频服务，请稍后重试。');
 
   const requestedPage = toPositiveInteger(page, 1);
   const payload: Record<string, unknown> = {
@@ -277,23 +277,21 @@ export async function parseVideoByBvid(options: {
       body: JSON.stringify(payload),
       signal,
     });
-  } catch (error) {
-    throw new BilibiliApiError(
-      `无法连接解析服务：${error instanceof Error ? error.message : '网络请求失败'}`,
-    );
+  } catch {
+    throw new BilibiliApiError('暂时无法连接视频服务，请检查网络后重试。');
   }
 
   let body: { ok?: boolean; message?: string; code?: number; data?: unknown };
   try {
     body = (await response.json()) as typeof body;
   } catch {
-    throw new BilibiliApiError(`解析服务返回了无法读取的数据（HTTP ${response.status}）。`, {
+    throw new BilibiliApiError('视频服务暂时没有响应，请稍后重试。', {
       status: response.status,
     });
   }
 
   if (!response.ok || body?.ok === false) {
-    throw new BilibiliApiError(body?.message || `解析失败（HTTP ${response.status}）。`, {
+    throw new BilibiliApiError('视频解析失败，请稍后重试。', {
       status: response.status,
       code: body?.code,
     });
@@ -310,11 +308,11 @@ export async function parseVideoByBvid(options: {
     ? { ...workerVideo, directUrl: workerMedia![0], playback: { candidates: workerMedia } }
     : envelopeData;
   if (!data || typeof data !== 'object') {
-    throw new BilibiliApiError('解析服务没有返回视频数据。', { status: response.status });
+    throw new BilibiliApiError('没有找到可用的视频信息，请稍后重试。', { status: response.status });
   }
   const typedData = data as Partial<BilibiliVideoData>;
   if (typeof typedData.directUrl !== 'string' || !typedData.directUrl) {
-    throw new BilibiliApiError('服务没有返回可播放的视频直链，请稍后重试。', {
+    throw new BilibiliApiError('视频暂时无法播放，请稍后重试。', {
       status: response.status,
     });
   }

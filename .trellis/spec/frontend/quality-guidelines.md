@@ -264,3 +264,76 @@ return <>
   <Stats stats={result.stats!} />
 </>;
 ```
+
+## Scenario: Friendly capability copy and full-page shell
+
+### 1. Scope / Trigger
+
+- Trigger: changing creator/settlement links, user-visible API errors, status/retention copy, or the product-shell background.
+- Goal: ordinary users see concise, actionable language while capability values remain copyable and the homepage background covers short, long, and mobile viewports.
+
+### 2. Signatures
+
+```ts
+interface CopyButtonProps {
+  value: string;             // complete challenge/report/manage URL
+  className?: string;
+  label?: string;
+}
+
+function compactLink(value: string, privateLink?: boolean): string;
+async function apiRequest<T>(path: string, options?: RequestInit): Promise<T>;
+```
+
+### 3. Contracts
+
+- `CopyButton` writes the complete `value` to the clipboard and changes its visible label to `已复制` or `复制失败，请重试`; it never leaves the complete capability token as visible or persistent page content. A compatibility input, when needed, is removed immediately after the copy attempt.
+- `compactLink` is presentation-only. It may show a short public suffix, but a private manage URL is always rendered as a redacted placeholder. Share-card and API payload values remain unchanged.
+- User-facing copy must describe the action or outcome (`请先打开分享短链，再复制 B 站视频页面地址。`) rather than implementation details such as HTTP status, parser endpoints, token fragments, D1 buckets, or server configuration. Technical detector details remain behind a collapsed disclosure.
+- `apiRequest` converts HTML/non-JSON responses into a safe retryable message and keeps structured API error messages when the response envelope is valid.
+- `html`, `body`, `#root`, and page shells provide a minimum viewport height; the product gradient is applied to `#root` so it does not stop at the first short content block.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Long public or private capability URL | Render only a compact/redacted preview; copy the exact original value |
+| Clipboard succeeds | Show `已复制` feedback on the same control |
+| Clipboard API unavailable/rejected | Try a transient compatibility copy; if it is also rejected, show `复制失败，请重试` without exposing the URL |
+| HTML or malformed API response | Show `服务暂时无法响应，请稍后重试。`; never show a JSON parser exception |
+| Unsupported Bilibili URL/short link | Give an actionable B 站 page-address instruction without endpoint/HTTP jargon |
+| Missing/deleted manage row | Show `尚未打开或已销毁` and no private detail |
+| Short homepage content or tall mobile content | Keep the background continuous through the full viewport and document height |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a `LinkBox` renders `.../c/…1234`, `CopyButton` copies the full signed URL, and a rejected clipboard operation is visible immediately.
+- Base: an old private result has seconds but no detail; show the seconds and a friendly unavailable message without inventing a chart.
+- Bad: rendering `bm1...` in a `<code>` block, calling `navigator.clipboard.writeText` with no feedback, showing `Unexpected token '<'`, or placing the gradient only on a content-sized child.
+
+### 6. Tests Required
+
+- `CopyButton` tests assert exact clipboard input and success/failure labels.
+- `compactLink` tests assert public compaction, private redaction, and no mutation of the copied value.
+- API client tests assert HTML/non-JSON responses become the friendly retry message.
+- Composer/settlement/manage tests assert compact links, status wording, and no private detail after deletion/expiry.
+- Home tests assert the leaderboard tab remains state-switched and the permanent/long-term label stays visible.
+- Run lint, type-check, all tests, production build, and `wrangler deploy --dry-run` after shell or Worker-copy changes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```tsx
+<code>{manageUrl}</code>
+<button onClick={() => void navigator.clipboard.writeText(manageUrl)}>复制</button>
+// A failed fetch bubbles `Unexpected token '<'` into the page.
+```
+
+#### Correct
+
+```tsx
+<code>{compactLink(manageUrl, true)}</code>
+<CopyButton value={manageUrl} label="复制链接" />
+// apiRequest catches a non-JSON response and throws a retryable Chinese message.
+```

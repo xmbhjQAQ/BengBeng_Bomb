@@ -17,7 +17,7 @@ describe('Bilibili source helpers', () => {
       .toBe('BV1B7411m7LV');
     expect(extractBvid('bv1b7411m7lv')).toBe('BV1b7411m7lv');
     expect(() => parseBilibiliInput('https://b23.tv/7WpblY1'))
-      .toThrow('暂不解析 b23.tv');
+      .toThrow('请先打开分享短链');
   });
 
   it('builds the configurable parse request', async () => {
@@ -46,6 +46,17 @@ describe('Bilibili source helpers', () => {
     expect(buildParseUrl('https://bilidirect.example/')).toBe('https://bilidirect.example/api/parse');
     expect(formatDuration(3661)).toBe('1:01:01');
     expect(formatCount(123456)).toBe('12万');
+  });
+
+  it('does not surface upstream parser diagnostics to ordinary users', async () => {
+    await expect(parseVideoByBvid({
+      bvid: 'BV1B7411m7LV',
+      apiBaseUrl: 'https://bilidirect.example',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: false,
+        message: 'upstream parser failed at /api/parse (HTTP 500)',
+      }), { status: 500 }),
+    })).rejects.toThrow('视频解析失败，请稍后重试。');
   });
 
   it('normalizes B站 assets and keeps a portrait dimension plus media fallbacks', async () => {

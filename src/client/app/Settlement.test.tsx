@@ -8,7 +8,7 @@ const base = { total: 0, held: 0, failed: 0, failureRate: 0, averageElapsedSecon
 describe('Stats', () => {
   it('shows an explicit empty state without fake bars', () => {
     render(<Stats stats={{ ...base, buckets: [] }} />);
-    expect(screen.getByText(/还没有失败时间数据/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有人记录没绷住的时间/)).toBeInTheDocument();
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
   });
 

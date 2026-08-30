@@ -160,7 +160,7 @@ describe('ChallengeView', () => {
       result: { outcome: 'failed', videoPositionSeconds: 12, scoreTrace: [{timeSeconds:12,score:80}] },
     });
     view.rerender(<ChallengeView token="public-token" />);
-    expect(screen.getByText(/正在封存挑战结果/)).toBeInTheDocument();
+    expect(screen.getByText(/正在保存挑战结果/)).toBeInTheDocument();
     expect(mocks.demo.closeCamera).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByText('settlement')).toBeInTheDocument());
     expect(JSON.parse(sessionStorage.getItem('bengbeng-completed:public-token') || '{}')).toMatchObject({

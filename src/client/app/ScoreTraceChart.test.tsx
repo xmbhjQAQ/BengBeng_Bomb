@@ -7,7 +7,7 @@ describe('ScoreTraceChart', () => {
   afterEach(cleanup);
   it('shows a truthful empty state', () => {
     render(<ScoreTraceChart points={[]} outcome="held" durationSeconds={60}/>);
-    expect(screen.getByText(/没有足够的有效人脸样本/)).toBeInTheDocument();
+    expect(screen.getByText(/没有记录到足够的面部变化/)).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
@@ -25,7 +25,7 @@ describe('ScoreTraceChart', () => {
     const model=createChartModel(points,7200);
     expect(model.points).toHaveLength(600);
     render(<ScoreTraceChart points={points} outcome="failed" durationSeconds={7200}/>);
-    expect(screen.getByRole('button',{name:/爆炸点/})).toHaveClass('failed');
-    expect(screen.getByText('爆炸点')).toBeVisible();
+    expect(screen.getByRole('button',{name:/没绷住时刻/})).toHaveClass('failed');
+    expect(screen.getByText('没绷住时刻')).toBeVisible();
   });
 });

@@ -46,9 +46,9 @@ describe('ManageView private result details', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
 
     expect(await screen.findByRole('img', { name: /挑战过程中的难绷程度折线图/ })).toBeVisible();
-    expect(screen.getByRole('button', { name: /12.0 秒，难绷程度 76，爆炸点/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /12.0 秒，难绷程度 76，没绷住时刻/ })).toBeVisible();
     expect(screen.getByText('测试视频')).toBeVisible();
-    expect(screen.getByRole('heading', { name: '匿名战况' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '大家的挑战情况' })).toBeVisible();
     expect(screen.getByRole('listitem', { name: '0–10 秒，1 人失败' })).toBeVisible();
     expect(screen.getByRole('listitem', { name: '10–20 秒，1 人失败' })).toBeVisible();
   });
@@ -60,23 +60,23 @@ describe('ManageView private result details', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
 
     expect(await screen.findByRole('heading', { name: '炸了！' })).toBeVisible();
-    expect(screen.getByText(/缺少可用的视频或曲线数据/)).toBeVisible();
+    expect(screen.getByText(/详细变化暂时不可用/)).toBeVisible();
     expect(screen.queryByRole('img', { name: /挑战过程中的难绷程度折线图/ })).not.toBeInTheDocument();
-    expect(screen.getByText('匿名统计暂不可用。')).toBeVisible();
+    expect(screen.getByText('大家的挑战情况暂时无法加载。')).toBeVisible();
   });
 
   it('does not render private details for an expired or deleted result', async () => {
     mocks.post.mockResolvedValueOnce({ status: 'expired' } satisfies ManageResult);
     const { unmount } = render(<ManageView />);
     fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
-    expect(await screen.findByRole('heading', { name: '已过期' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '结果已过期' })).toBeVisible();
     expect(screen.queryByText('本次表情变化')).not.toBeInTheDocument();
 
     unmount();
     mocks.post.mockResolvedValueOnce({ status: 'deleted' } satisfies ManageResult);
     render(<ManageView />);
     fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
-    expect(await screen.findByRole('heading', { name: '已销毁' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '尚未打开或已销毁' })).toBeVisible();
     expect(screen.queryByText('本次表情变化')).not.toBeInTheDocument();
   });
 });

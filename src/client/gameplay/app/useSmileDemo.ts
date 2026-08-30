@@ -135,7 +135,7 @@ export function useSmileDemo(): SmileDemoController {
     const next = createLocalResult({
       settlement,
       profile: calibratedProfile,
-      videoName: bilibiliSelection.title || bilibiliSelection.bvid,
+      videoName: bilibiliSelection.title || '这段视频',
       maximumSmoothedScore: getMaximumScore(),
       scoreTrace: getScoreTrace(),
     });
