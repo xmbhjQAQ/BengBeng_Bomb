@@ -27,3 +27,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 2: 普通用户文案与首页背景收口
+
+**Date**: 2026-08-31
+**Task**: 普通用户文案与首页背景收口
+**Branch**: `master`
+
+### Summary
+
+完成全站普通用户文案巡检；新增长链接缩略与复制反馈、接口错误友好化、移动端兼容复制；修复首页根背景在短内容和移动视口下未铺满的问题；通过 lint、type-check、129 项测试、生产构建与 Wrangler dry-run。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c48f61` | (see git log) |
+
+### Status
+
+[OK] **Completed**
