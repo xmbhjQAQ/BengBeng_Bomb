@@ -28,6 +28,12 @@ export function Settlement({
     lines: [held ? '整段视频都没有笑' : '坚持到了这一秒', `${result.elapsedSeconds.toFixed(1)} 秒`],
     stats: result.stats,
   }), '绷绷炸弹-战报.png');
+  const forward = () => {
+    sessionStorage.setItem('forward-video', `https://www.bilibili.com/video/${challenge.video.bvid}`);
+    if (window.location.pathname === '/') return;
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
   const content = (
     <>
       <section className={`settlement ${held ? 'held' : 'failed'}`}>
@@ -46,7 +52,7 @@ export function Settlement({
           <a
             className="button-link"
             href="/"
-            onClick={() => sessionStorage.setItem('forward-video', `https://www.bilibili.com/video/${challenge.video.bvid}`)}
+            onClick={(event) => { event.preventDefault(); forward(); }}
           >转发此挑战</a>
         </div>
       </section>

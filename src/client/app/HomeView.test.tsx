@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import { HomeView } from './HomeView';
 
 const mocks=vi.hoisted(()=>({apiRequest:vi.fn(),post:vi.fn()}));
@@ -42,5 +43,34 @@ describe('HomeView',()=>{
     fireEvent.click(screen.getByRole('button',{name:'我来挑战'}));
     await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/c/self-token'));
     expect(mocks.post).toHaveBeenLastCalledWith('/api/challenges',{videoTicket:'bv1.ticket',mode:'self'});
+  });
+
+  it('automatically parses a video forwarded from settlement', async () => {
+    const forwarded = `https://www.bilibili.com/video/${entry.video.bvid}`;
+    sessionStorage.setItem('forward-video', forwarded);
+    mocks.post.mockResolvedValue(parsed);
+
+    render(<StrictMode><HomeView navigate={vi.fn()} /></StrictMode>);
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/bilibili/parse', { input: forwarded }));
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(entry.video.title)).toBeVisible();
+    expect(sessionStorage.getItem('forward-video')).toBeNull();
+  });
+
+  it('keeps a failed forwarded parse available for retry and clears it after success', async () => {
+    const forwarded = `https://www.bilibili.com/video/${entry.video.bvid}`;
+    sessionStorage.setItem('forward-video', forwarded);
+    mocks.post.mockRejectedValueOnce(new Error('暂时不可用')).mockResolvedValueOnce(parsed);
+
+    render(<HomeView navigate={vi.fn()} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('暂时不可用');
+    expect(sessionStorage.getItem('forward-video')).toBe(forwarded);
+    fireEvent.click(screen.getByRole('button', { name: '解析视频' }));
+
+    await waitFor(() => expect(screen.getByText(entry.video.title)).toBeVisible());
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(sessionStorage.getItem('forward-video')).toBeNull();
   });
 });

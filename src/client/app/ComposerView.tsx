@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { post } from '../api/client';
 import { createShareCard, downloadBlob } from '../sharing/card';
 import { CLIENT_CONFIG } from '../../shared/config/client';
@@ -8,8 +8,15 @@ export interface ParsedVideo { video: PlaybackData; videoTicket: string }
 interface Created { challengeUrl:string;manageUrl:string;expiresAt:number }
 export function ComposerView({ embedded = false, prefill }: { embedded?: boolean; prefill?: ParsedVideo | null }){
   const [input,setInput]=useState(sessionStorage.getItem('forward-video')||'');const [parsed,setParsed]=useState<ParsedVideo|null>(prefill??null);const [created,setCreated]=useState<Created|null>(null);const [initiator,setInitiator]=useState('');const [recipient,setRecipient]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+  const autoForwardStarted = useRef(false);
   useEffect(()=>{if(!prefill)return;setParsed(prefill);setInput(`https://www.bilibili.com/video/${prefill.video.bvid}`);setCreated(null);setError('');},[prefill]);
-  const parse=async()=>{setBusy(true);setError('');try{setParsed(await post<ParsedVideo>('/api/bilibili/parse',{input}));setCreated(null);}catch(e){setError(e instanceof Error?e.message:'解析失败');}finally{setBusy(false);}};
+  const parse=useCallback(async(value = input, clearForward = false)=>{setBusy(true);setError('');try{setParsed(await post<ParsedVideo>('/api/bilibili/parse',{input:value}));setCreated(null);if(clearForward||value===input)sessionStorage.removeItem('forward-video');}catch(e){setError(e instanceof Error?e.message:'解析失败');}finally{setBusy(false);}},[input]);
+  useEffect(()=>{
+    const forwarded = sessionStorage.getItem('forward-video');
+    if(prefill || !forwarded || autoForwardStarted.current)return;
+    autoForwardStarted.current = true;
+    void parse(forwarded, true);
+  },[parse, prefill]);
   const create=async()=>{if(!parsed)return;setBusy(true);setError('');try{setCreated(await post<Created>('/api/challenges',{videoTicket:parsed.videoTicket,initiator,recipient,message,mode:'classic'}));sessionStorage.removeItem('forward-video');}catch(e){setError(e instanceof Error?e.message:'创建失败');}finally{setBusy(false);}};
   const card=async()=>{if(!created||!parsed)return;downloadBlob(await createShareCard({url:created.challengeUrl,video:parsed.video,heading:'你能绷住吗？',lines:[`${initiator} 向你投来一枚绷绷炸弹`,message||'全程不笑，就算你赢！','挑战链接限时有效']}),'绷绷炸弹-挑战.png');};
   const Root=embedded?'div':'main';return <Root className={embedded?'composer-content':'page'}>{!embedded&&<header className="hero"><p className="eyebrow">BENG BENG BOMB</p><h1>绷绷炸弹</h1><p className="intro">挑一段 B 站视频，看看朋友能绷到第几秒。</p></header>}

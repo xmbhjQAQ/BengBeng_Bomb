@@ -73,6 +73,8 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 | Trace has no valid points | show a truthful empty chart state; do not synthesize a line |
 | Homepage tab changes | keep Composer fields/parsed video mounted, hide the inactive panel from assistive technology, and keep `/` unchanged |
 | Leaderboard self/share action | re-resolve the stable BVID through the Worker; never reuse cached media URLs |
+| Settlement forward action | intercept the `转发此挑战` anchor, store only the stable BVID URL in `sessionStorage.forward-video`, push `/` with `history.pushState` and dispatch `popstate`; Composer consumes the value once and automatically calls `/api/bilibili/parse` |
+| Forwarded parse fails | keep the URL in the input and surface the normal parse error so the user can retry manually; clear `forward-video` only after a successful parse |
 
 ### 5. Good/Base/Bad Cases
 
@@ -158,4 +160,18 @@ Capture a bounded projection and freeze it with the local result:
 ```ts
 const scoreTrace = freezeScoreTrace(downsample(validRunningSamples, 600));
 const result = Object.freeze({ ...settlement, scoreTrace });
+```
+
+Forward a settlement challenge through the existing SPA state instead of leaving a pasted URL that requires a second gesture:
+
+```tsx
+// Wrong: navigate/reload with only a prefilled input value.
+<a href="/" onClick={() => sessionStorage.setItem('forward-video', url)}>转发此挑战</a>
+
+// Correct: preserve the intent, update the SPA path, and let Composer consume
+// the value once to call the existing parser automatically.
+event.preventDefault();
+sessionStorage.setItem('forward-video', url);
+history.pushState({}, '', '/');
+dispatchEvent(new PopStateEvent('popstate'));
 ```
