@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlaybackData } from '../../shared/contracts';
 import { ChallengeView } from './ChallengeView';
 
@@ -46,7 +46,11 @@ vi.mock('../gameplay/app/ChallengePanel', () => ({
     <div>player-panel<button type="button" disabled={!canStart} onClick={onStart}>开始挑战</button></div>
   ),
 }));
-vi.mock('./Settlement', () => ({ Settlement: () => <div>settlement</div> }));
+vi.mock('./Settlement', () => ({
+  Settlement: ({ result }: { result: { outcome: string; elapsedSeconds: number } }) => (
+    <><div>settlement</div><div data-testid="settlement-details">{result.outcome}:{result.elapsedSeconds}</div></>
+  ),
+}));
 
 const playback: PlaybackData = {
   source: 'bilibili',
@@ -78,6 +82,8 @@ const opened = {
 };
 
 describe('ChallengeView', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     sessionStorage.clear();
     mocks.post.mockReset();
@@ -157,6 +163,9 @@ describe('ChallengeView', () => {
     expect(screen.getByText(/正在封存挑战结果/)).toBeInTheDocument();
     expect(mocks.demo.closeCamera).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByText('settlement')).toBeInTheDocument());
+    expect(JSON.parse(sessionStorage.getItem('bengbeng-completed:public-token') || '{}')).toMatchObject({
+      outcome: 'failed', elapsedSeconds: 12, scoreTrace: [{ timeSeconds: 12, score: 80 }],
+    });
 
     expect(window.location.href).toBe(initialHref);
     expect(pushSpy).not.toHaveBeenCalled();
@@ -183,6 +192,53 @@ describe('ChallengeView', () => {
     expect(completionCalls[1]?.[1]).toEqual(completionCalls[0]?.[1]);
     expect(completionCalls[0]?.[1]).toMatchObject({ scoreTrace: [{timeSeconds:1,score:12}] });
     expect(sessionStorage.getItem('bengbeng-attempt:public-token')).toBeNull();
+  });
+
+  it('restores the private settlement after a refresh in the same tab', async () => {
+    sessionStorage.setItem('bengbeng-completed:public-token', JSON.stringify({
+      outcome: 'held', elapsedSeconds: 60, reportUrl: 'https://example.com/r/report', stats: opened.stats,
+      scoreTrace: [{ timeSeconds: 1, score: 12 }],
+    }));
+    mocks.post.mockResolvedValueOnce({
+      ...opened,
+      session: { state: 'completed', result_expires_at: Math.floor(Date.now() / 1000) + 3600 },
+    });
+
+    render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByTestId('settlement-details')).toHaveTextContent('held:60');
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(mocks.post.mock.calls.some(([path]) => path === '/api/challenges/complete')).toBe(false);
+  });
+
+  it('clears a cached settlement when the server no longer reports a completed session', async () => {
+    sessionStorage.setItem('bengbeng-completed:public-token', JSON.stringify({
+      outcome: 'failed', elapsedSeconds: 12, reportUrl: 'https://example.com/r/report', stats: opened.stats,
+      scoreTrace: [{ timeSeconds: 12, score: 80 }],
+    }));
+    mocks.post.mockResolvedValueOnce(opened);
+
+    render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByText('测试视频')).toBeInTheDocument();
+    expect(screen.queryByText('settlement')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('bengbeng-completed:public-token')).toBeNull();
+  });
+
+  it('does not restore a settlement after the server-side result expiry', async () => {
+    sessionStorage.setItem('bengbeng-completed:public-token', JSON.stringify({
+      outcome: 'held', elapsedSeconds: 60, reportUrl: 'https://example.com/r/report', stats: opened.stats,
+      scoreTrace: [{ timeSeconds: 1, score: 12 }],
+    }));
+    mocks.post.mockResolvedValueOnce({
+      ...opened,
+      session: { state: 'completed', result_expires_at: Math.floor(Date.now() / 1000) - 1 },
+    });
+
+    render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByText('这枚炸弹已经引爆过了')).toBeVisible();
+    expect(sessionStorage.getItem('bengbeng-completed:public-token')).toBeNull();
   });
 
   it('uses the unified single-person wording without a fake identity', async () => {

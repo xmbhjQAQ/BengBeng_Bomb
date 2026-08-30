@@ -42,6 +42,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Claim the one-time attempt only from the explicit ready-stage start gesture. Camera/model/calibration failures never call `/api/challenges/start`.
 - When a local result exists, close the camera and show an in-page submitting state. A failed completion request retains the same attempt token and immutable local result; retry sends the identical completion payload, and successful completion clears the attempt before rendering settlement in the same component tree.
 - Store the attempt bearer only in per-tab `sessionStorage`, never in URLs, images, D1, analytics, or logs.
+- After completion succeeds, persist a sanitized settlement snapshot under a challenge-token-scoped `sessionStorage` key so a same-tab refresh can restore the curve, heatmap and report link. On reload, apply that snapshot only after `/api/challenges/open` confirms `session.state === 'completed'` and its `result_expires_at` is still current; malformed, expired, missing or server-incomplete snapshots must be cleared and must not bypass the one-time challenge conflict state.
 - During active playback, provide an immersive fixed player, top-left status, top-right circular local camera bubble, and centered face-loss/recovery messaging.
 - Treat MediaPipe task creation as a serialized browser-global operation. Try the automatically selected WASM fileset with GPU then CPU; if both fail, retry the bundled `vision_wasm_nosimd_internal` fileset with GPU then CPU. A rejected initialization must not poison later retries.
 - React effect cleanup must not close a detector still awaited by a newer StrictMode/retry consumer. Close a shared pending result only after its final consumer releases it.
@@ -70,6 +71,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 | SIMD WASM or its GPU/CPU task creation fails | serialize initialization, then retry the bundled no-SIMD fileset without re-requesting camera permission |
 | Both WASM variants fail | keep the challenge unclaimed, show the normal retry action, and expose only sanitized bounded technical details |
 | Completion retry after a network error | reuse the same frozen score trace; never resample or mutate the payload |
+| Settlement refresh | restore only the validated same-tab snapshot after the server reports a current completed session; otherwise show the existing completed/expired state |
 | Trace has no valid points | show a truthful empty chart state; do not synthesize a line |
 | Homepage tab changes | keep Composer fields/parsed video mounted, hide the inactive panel from assistive technology, and keep `/` unchanged |
 | Leaderboard self/share action | re-resolve the stable BVID through the Worker; never reuse cached media URLs |
@@ -87,6 +89,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Reducer/scoring/calibration tests cover danger recovery, sustained failure, face loss, buffering and invalid media events.
 - `ChallengeView` test asserts open playback is passed directly to `selectResolvedBilibili`, video context is visible before consent, and no second parse request occurs.
 - Recipient-flow tests assert only one stage is primary at a time, calibration does not mount the player, the ready player is inert, start is claimed only by the explicit button, pathname/history stay untouched through settlement, and failed submission retries the identical attempt/result before clearing session storage on success.
+- Challenge refresh tests assert a successful completion writes a token-scoped snapshot, a current completed session restores settlement without a second completion request, and opened/expired/malformed snapshots are cleared.
 - Player tests cover play authorization, progress/gesture locking, media fallback and cleanup.
 - Camera/detector tests cover permission, track interruption, inference serialization and GPU/CPU adapter output.
 - MediaPipe adapter tests assert the exact automatic GPU → automatic CPU → no-SIMD GPU → no-SIMD CPU order, queue recovery after rejection, and sanitized error output.
@@ -160,6 +163,21 @@ Capture a bounded projection and freeze it with the local result:
 ```ts
 const scoreTrace = freezeScoreTrace(downsample(validRunningSamples, 600));
 const result = Object.freeze({ ...settlement, scoreTrace });
+```
+
+Restore a completed result only after the server confirms the one-time session is still completed and within its result lifetime:
+
+```ts
+// Wrong: trust a client-only snapshot before checking the session state.
+setCompleted(JSON.parse(sessionStorage.getItem(key)!));
+
+// Correct: gate the snapshot with the server state and expiry, then validate
+// score points/stats before rendering it.
+if (opened.session?.state === 'completed' && isCurrent(opened.session.result_expires_at)) {
+  setCompleted(readValidatedSnapshot(key, opened.challenge.video.duration));
+} else {
+  sessionStorage.removeItem(key);
+}
 ```
 
 Forward a settlement challenge through the existing SPA state instead of leaving a pasted URL that requires a second gesture:

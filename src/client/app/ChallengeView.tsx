@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { post } from '../api/client';
-import type { AggregateStats, ChallengePayload, PlaybackData } from '../../shared/contracts';
+import { decodeScoreTrace, isRecord, type AggregateStats, type ChallengePayload, type PlaybackData, type ScorePoint } from '../../shared/contracts';
 import { useSmileDemo } from '../gameplay/app/useSmileDemo';
 import { CameraPanel } from '../gameplay/app/CameraPanel';
 import { ChallengePanel } from '../gameplay/app/ChallengePanel';
@@ -12,7 +12,7 @@ interface Opened {
   challenge: ChallengePayload;
   playback: PlaybackData;
   stats: AggregateStats;
-  session: { state: 'opened' | 'started' | 'completed' } | null;
+  session: { state: 'opened' | 'started' | 'completed'; result_expires_at?: number | null } | null;
 }
 
 interface Completed {
@@ -20,12 +20,51 @@ interface Completed {
   elapsedSeconds: number;
   reportUrl: string;
   stats: AggregateStats;
-  scoreTrace?: ReadonlyArray<Readonly<{ timeSeconds: number; score: number }>>;
+  scoreTrace?: ReadonlyArray<Readonly<ScorePoint>>;
 }
 
 type Submission = { status: 'idle' | 'submitting' | 'error'; error: string };
 
 const attemptKey = (token: string) => `bengbeng-attempt:${token}`;
+const completedKey = (token: string) => `bengbeng-completed:${token}`;
+
+const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+function readCachedCompleted(token: string, durationSeconds: number): Completed | null {
+  const key = completedKey(token);
+  const raw = sessionStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!isRecord(value) || (value.outcome !== 'held' && value.outcome !== 'failed') || typeof value.reportUrl !== 'string' || !value.reportUrl) throw new Error('invalid completed result');
+    if (!finiteNumber(value.elapsedSeconds) || value.elapsedSeconds < 0 || value.elapsedSeconds > durationSeconds + 3) throw new Error('invalid completed elapsed');
+    if (!isRecord(value.stats)) throw new Error('invalid completed stats');
+    const stats = value.stats;
+    const integerStats = ['total', 'held', 'failed'] as const;
+    if (!integerStats.every((name) => Number.isInteger(stats[name]) && Number(stats[name]) >= 0)) throw new Error('invalid completed counts');
+    if (Number(stats.held) + Number(stats.failed) > Number(stats.total) || !finiteNumber(stats.failureRate) || stats.failureRate < 0 || stats.failureRate > 1 || !finiteNumber(stats.averageElapsedSeconds) || stats.averageElapsedSeconds < 0 || !Array.isArray(stats.buckets)) throw new Error('invalid completed stats');
+    const buckets = stats.buckets.map((bucket) => {
+      if (!isRecord(bucket) || !finiteNumber(bucket.startSeconds) || bucket.startSeconds < 0 || !finiteNumber(bucket.count) || !Number.isInteger(bucket.count) || bucket.count < 0) throw new Error('invalid completed bucket');
+      return { startSeconds: bucket.startSeconds, count: bucket.count };
+    });
+    const scoreTrace = decodeScoreTrace(value.scoreTrace ?? [], durationSeconds);
+    return {
+      outcome: value.outcome,
+      elapsedSeconds: value.elapsedSeconds,
+      reportUrl: value.reportUrl,
+      stats: {
+        total: Number(stats.total), held: Number(stats.held), failed: Number(stats.failed),
+        failureRate: stats.failureRate, averageElapsedSeconds: stats.averageElapsedSeconds, buckets,
+      },
+      scoreTrace,
+    };
+  } catch {
+    sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+const clearCachedCompleted = (token: string) => sessionStorage.removeItem(completedKey(token));
 
 export function ChallengeView({ token }: { token: string }) {
   const demo = useSmileDemo();
@@ -47,6 +86,15 @@ export function ChallengeView({ token }: { token: string }) {
     loaded.current = true;
     void post<Opened>('/api/challenges/open', { challengeToken: token })
       .then((value) => {
+        if (value.session?.state === 'completed') {
+          const expiresAt = value.session.result_expires_at;
+          const resultIsCurrent = expiresAt === undefined || (typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000));
+          const cached = resultIsCurrent ? readCachedCompleted(token, value.challenge.video.duration) : null;
+          if (cached) setCompleted(cached);
+          else clearCachedCompleted(token);
+        } else {
+          clearCachedCompleted(token);
+        }
         setOpened(value);
         demo.selectResolvedBilibili(value.playback);
       })
@@ -67,7 +115,9 @@ export function ChallengeView({ token }: { token: string }) {
         scoreTrace: localResult.scoreTrace,
       });
       sessionStorage.removeItem(attemptKey(token));
-      setCompleted({ ...value, scoreTrace: localResult.scoreTrace });
+      const completedValue = { ...value, scoreTrace: localResult.scoreTrace };
+      setCompleted(completedValue);
+      try { sessionStorage.setItem(completedKey(token), JSON.stringify(completedValue)); } catch { /* private storage can be unavailable */ }
       setSubmission({ status: 'idle', error: '' });
       void document.exitFullscreen?.().catch(() => undefined);
     } catch (error) {
@@ -112,7 +162,7 @@ export function ChallengeView({ token }: { token: string }) {
 
   if (openError && !opened) return <Message title="挑战无法打开" detail={openError} />;
   if (!opened) return <Message title="正在拆弹…" detail="正在验证挑战并刷新视频直链" />;
-  if (opened.session?.state === 'completed') {
+  if (opened.session?.state === 'completed' && !completed) {
     return <Message title="这枚炸弹已经引爆过了" detail="每个挑战只记录一次结果，请让发起者查看私密结果入口。" />;
   }
   if (opened.session?.state === 'started' && !attempt) {
