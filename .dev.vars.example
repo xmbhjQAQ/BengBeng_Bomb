@@ -1,0 +1,2 @@
+APP_SIGNING_SECRET=replace-with-at-least-32-random-characters
+BILIDIRECT_API_KEY=replace-with-your-server-api-key

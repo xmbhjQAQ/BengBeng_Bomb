@@ -1,0 +1,10 @@
+import type { ApiEnvelope } from '../../shared/contracts';
+
+const baseSecurityHeaders: Record<string, string> = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()' };
+const securityHeaders: Record<string, string> = { ...baseSecurityHeaders, 'Cache-Control': 'no-store' };
+const contentSecurityPolicy = ["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","script-src 'self' 'wasm-unsafe-eval'","style-src 'self' 'unsafe-inline'","img-src 'self' https: data: blob:","media-src https: blob:","connect-src 'self' https:"].join('; ');
+export function json<T>(data: T, status = 200) { return new Response(JSON.stringify({ ok: true, data } satisfies ApiEnvelope<T>), { status, headers: { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8' } }); }
+export function failure(code: string, message: string, status = 400) { return new Response(JSON.stringify({ ok: false, error: { code, message } } satisfies ApiEnvelope<never>), { status, headers: { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8' } }); }
+export async function readJson(request: Request, maximumBytes = 20_000): Promise<unknown> { const length = Number(request.headers.get('Content-Length') || 0); if (length > maximumBytes) throw new Error('REQUEST_TOO_LARGE'); const text = await request.text(); if (text.length > maximumBytes) throw new Error('REQUEST_TOO_LARGE'); return JSON.parse(text); }
+export function bearer(request: Request) { const value = request.headers.get('Authorization') || ''; if (!value.startsWith('Bearer ')) throw new Error('MISSING_AUTHORIZATION'); return value.slice(7); }
+export function secureAsset(response:Response){const headers=new Headers(response.headers);for(const [name,value] of Object.entries(baseSecurityHeaders))headers.set(name,value);headers.set('Content-Security-Policy',contentSecurityPolicy);return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}

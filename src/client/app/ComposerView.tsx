@@ -1,0 +1,21 @@
+import { useState } from 'react';
+import { post } from '../api/client';
+import { createShareCard, downloadBlob } from '../sharing/card';
+import { CLIENT_CONFIG } from '../../shared/config/client';
+import type { PlaybackData, VideoMetadata } from '../../shared/contracts';
+
+interface Parsed { video: PlaybackData; videoTicket: string }
+interface Created { challengeUrl:string;manageUrl:string;expiresAt:number }
+export function ComposerView(){
+  const [input,setInput]=useState(sessionStorage.getItem('forward-video')||'');const [parsed,setParsed]=useState<Parsed|null>(null);const [created,setCreated]=useState<Created|null>(null);const [initiator,setInitiator]=useState('');const [recipient,setRecipient]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+  const parse=async()=>{setBusy(true);setError('');try{setParsed(await post<Parsed>('/api/bilibili/parse',{input}));setCreated(null);}catch(e){setError(e instanceof Error?e.message:'解析失败');}finally{setBusy(false);}};
+  const create=async()=>{if(!parsed)return;setBusy(true);setError('');try{setCreated(await post<Created>('/api/challenges',{videoTicket:parsed.videoTicket,initiator,recipient,message}));sessionStorage.removeItem('forward-video');}catch(e){setError(e instanceof Error?e.message:'创建失败');}finally{setBusy(false);}};
+  const card=async()=>{if(!created||!parsed)return;downloadBlob(await createShareCard({url:created.challengeUrl,video:parsed.video,heading:'你能绷住吗？',lines:[`${initiator} 向你投来一枚绷绷炸弹`,message||'全程不笑，就算你赢！','挑战链接 48 小时内有效']}),'绷绷炸弹-挑战.png');};
+  return <main className="page"><header className="hero"><p className="eyebrow">BENG BENG BOMB</p><h1>绷绷炸弹</h1><p className="intro">挑一段 B 站视频，看看朋友能绷到第几秒。</p></header>
+    <section className="section"><span className="step">01 · 选视频</span><h2>粘贴 B 站视频</h2><div className="input-row"><input aria-label="B站视频链接" value={input} onChange={e=>setInput(e.target.value)} placeholder="https://www.bilibili.com/video/BV..."/><button disabled={busy||!input.trim()} onClick={()=>void parse()}>{busy?'解析中…':'解析视频'}</button></div><p className="hint">第一阶段支持直接 BV 视频页；短链请先在浏览器打开后复制地址。</p>{error&&<p className="error" role="alert">{error}</p>}{parsed&&<VideoPreview video={parsed.video}/>}</section>
+    {parsed&&<section className="section"><span className="step">02 · 装填炸弹</span><h2>写下挑战</h2><label>你的昵称 <input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={initiator} onChange={e=>setInitiator(e.target.value)}/><small>{initiator.length}/{CLIENT_CONFIG.limits.nickname}</small></label><label>挑战对象（可选）<input className="field" maxLength={CLIENT_CONFIG.limits.recipient} value={recipient} onChange={e=>setRecipient(e.target.value)}/></label><label>短留言（可选）<textarea className="field" maxLength={CLIENT_CONFIG.limits.message} value={message} onChange={e=>setMessage(e.target.value)}/><small>{message.length}/{CLIENT_CONFIG.limits.message}</small></label><button disabled={busy||!initiator.trim()} onClick={()=>void create()}>生成挑战</button></section>}
+    {created&&<section className="section result"><span className="step">03 · 引爆</span><h2>挑战已装好</h2><LinkBox label="公开挑战链接" value={created.challengeUrl}/><LinkBox label="私密结果入口（只保存这一份）" value={created.manageUrl} privateLink/><p className="warning">私密入口拥有查看和销毁结果的权限，请勿转发。未完成挑战 48 小时失效；完成结果再保留 48 小时。</p><div className="button-row"><button onClick={()=>void card()}>下载分享图</button><button className="secondary" onClick={()=>navigator.share?.({title:'绷绷炸弹',url:created.challengeUrl})}>系统分享</button></div></section>}
+  </main>;
+}
+function VideoPreview({video}:{video:VideoMetadata}){return <div className="video-meta"><div className="video-cover">{video.cover?<img referrerPolicy="no-referrer" src={video.cover} alt="视频封面"/>:<span>无封面</span>}</div><div><p className="video-title">{video.title}</p><p className="video-subtitle">{video.bvid} · {Math.round(video.duration)} 秒</p><p className="muted clamp">{video.description}</p></div></div>}
+function LinkBox({label,value,privateLink=false}:{label:string;value:string;privateLink?:boolean}){return <div className={`link-box${privateLink?' private':''}`}><strong>{label}</strong><code>{value}</code><button className="secondary" onClick={()=>void navigator.clipboard.writeText(value)}>复制</button></div>}

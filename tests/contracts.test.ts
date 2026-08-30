@@ -1,0 +1,3 @@
+import { describe,expect,it } from 'vitest';
+import { decodeChallengePayload,decodeVideoMetadata } from '../src/shared/contracts';
+describe('boundary decoders',()=>{it('round-trips bounded video metadata',()=>{const video={source:'bilibili',bvid:'BV1B7411m7LV',cid:12,page:1,title:'标题',description:'简介',cover:'https://i.example/a.jpg',duration:90};expect(decodeVideoMetadata(video)).toEqual(video);});it('rejects oversized private copy before signing',()=>{expect(()=>decodeChallengePayload({v:1,kind:'challenge',video:{bvid:'BV1B7411m7LV',cid:1,page:1,title:'标题',description:'',cover:'',duration:2},initiator:'x'.repeat(21),createdAt:1,expiresAt:2,nonce:'n'})).toThrow(/20/);});});
