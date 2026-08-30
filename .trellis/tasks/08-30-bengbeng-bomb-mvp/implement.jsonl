@@ -1,0 +1,4 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The feature crosses browser, Worker, D1 and upstream boundaries; central decoders and round-trip tests are mandatory."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Verified gameplay modules must be migrated without duplicating state, config or payload logic."}
+{"file":".trellis/tasks/08-30-bengbeng-bomb-mvp/research/existing-assets.md","reason":"Sanitized evidence and reuse map for the verified gameplay, bilidirect contract and important Bilibili browser constraints."}
+{"file":".trellis/tasks/08-30-bengbeng-bomb-mvp/research/cloudflare-platform.md","reason":"Current official platform evidence for SPA assets, Worker-first API routing, D1, scheduled cleanup and Secret boundaries."}

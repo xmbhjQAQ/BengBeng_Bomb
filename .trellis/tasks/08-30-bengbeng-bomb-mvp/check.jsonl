@@ -1,0 +1,4 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review DTO ownership, validation boundaries, database/API/client round trips and error behavior."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Detect duplicated config, validators, state transitions and copied contract parsing."}
+{"file":".trellis/tasks/08-30-bengbeng-bomb-mvp/research/existing-assets.md","reason":"Compare product behavior with the verified gameplay baseline and Bilibili integration constraints without exposing credentials."}
+{"file":".trellis/tasks/08-30-bengbeng-bomb-mvp/research/cloudflare-platform.md","reason":"Check deployment, binding, cleanup and Secret behavior against current official platform evidence."}
