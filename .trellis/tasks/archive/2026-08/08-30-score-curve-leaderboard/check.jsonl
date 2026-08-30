@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Audit privacy disclosure, local-only raw face data, retry immutability, no-refresh UI state, responsive charts and required client tests."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Audit validation, result TTL coupling, deletion, old token compatibility, one-time aggregate updates and public API envelopes."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify score trace and leaderboard round trips, DTO aliases, cache behavior, empty/invalid inputs and persistence cleanup."}
+{"file":".trellis/tasks/08-30-score-curve-leaderboard/design.md","reason":"Check implementation against the finalized formulas, schemas, fallback behavior, self/classic modes and visual acceptance contracts."}

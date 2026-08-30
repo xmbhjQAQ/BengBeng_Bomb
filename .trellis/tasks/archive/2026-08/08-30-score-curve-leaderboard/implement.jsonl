@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Preserve local face-processing boundaries, immutable retry payloads, single-page recipient flow, accessibility, and MediaPipe lifecycle while adding the score trace and homepage views."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Extend Worker routes, D1 retention, capability compatibility, aggregate-once completion and cleanup without exposing private data."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace score points and leaderboard fields through inference, API validation, D1, report resolution, cache and visualization with one shared contract."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the existing scoring output, Composer, ChallengeView, Settlement and video resolution paths instead of duplicating state or parsing behavior."}
+{"file":".trellis/tasks/08-30-score-curve-leaderboard/design.md","reason":"Implement the agreed trace schema, TTL coupling, ranking formula, cache policy, self challenge mode and SPA interaction boundaries."}
