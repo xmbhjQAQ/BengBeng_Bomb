@@ -1,4 +1,4 @@
-import { decodeChallengePayload, decodeReportPayload, decodeVideoMetadata, isRecord, type ChallengePayload, type ReportPayload, type VideoMetadata } from '../../shared/contracts';
+import { decodeChallengePayload, decodeGroupEntryPayload, decodeGroupInvitationPayload, decodeGroupManagePayload, decodeGroupResultPayload, decodeReportPayload, decodeVideoMetadata, isRecord, type ChallengePayload, type GroupEntryPayload, type GroupInvitationPayload, type GroupManagePayload, type GroupResultPayload, type ReportPayload, type VideoMetadata } from '../../shared/contracts';
 import { base64UrlEncode, canonicalJson, decodeText, randomToken, sha256, sign, verify } from './crypto';
 
 export class CapabilityError extends Error { constructor(public readonly code: string, message: string) { super(message); } }
@@ -19,3 +19,41 @@ export const issueVideoTicket = (video: VideoMetadata, expiresAt: number, secret
 export async function readVideoTicket(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<VideoTicket> { const value = await decode(token, 'bv1', 'video:v1', secret); if (!isRecord(value) || value.v !== 1 || value.kind !== 'video' || !isRecord(value.video) || typeof value.expiresAt !== 'number' || typeof value.nonce !== 'string') throw new CapabilityError('INVALID_TOKEN', '视频凭证格式不正确'); ensureFresh(value.expiresAt, now); return { v:1,kind:'video',video:decodeVideoMetadata(value.video),expiresAt:value.expiresAt,nonce:value.nonce }; }
 export const issueReport = (payload: ReportPayload, secret: string) => encode('br1', 'report:v1', decodeReportPayload(payload), secret);
 export async function readReport(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<ReportPayload> { const value = decodeReportPayload(await decode(token, 'br1', 'report:v1', secret)); ensureFresh(value.expiresAt, now); return value; }
+
+/** Group capabilities intentionally use separate prefixes/domains so a result
+ * or management link can never be accepted by the participation endpoints. */
+export const issueGroupInvitation = (payload: GroupInvitationPayload, secret: string) => encode('bg1', 'group:v1', decodeGroupInvitationPayload(payload), secret);
+export async function readGroupInvitation(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<GroupInvitationPayload> {
+  const value = decodeGroupInvitationPayload(await decode(token, 'bg1', 'group:v1', secret));
+  ensureFresh(value.expiresAt, now);
+  return value;
+}
+export const issueGroupEntry = (payload: GroupEntryPayload, secret: string) => encode('bge1', 'group-entry:v1', decodeGroupEntryPayload(payload), secret);
+export async function readGroupEntry(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<GroupEntryPayload> {
+  const value = decodeGroupEntryPayload(await decode(token, 'bge1', 'group-entry:v1', secret));
+  // The entry remains useful while public results are retained, even after
+  // the participation window has closed.
+  ensureFresh(value.resultExpiresAt, now);
+  return value;
+}
+export const issueGroupResult = (payload: GroupResultPayload, secret: string) => encode('bgr1', 'group-result:v1', decodeGroupResultPayload(payload), secret);
+export async function readGroupResult(token: string, secret: string, now = Math.floor(Date.now() / 1000)): Promise<GroupResultPayload> {
+  const value = decodeGroupResultPayload(await decode(token, 'bgr1', 'group-result:v1', secret));
+  ensureFresh(value.resultExpiresAt, now);
+  return value;
+}
+export const issueGroupManage = (payload: GroupManagePayload, secret: string) => encode('bgm1', 'group-manage:v1', decodeGroupManagePayload(payload), secret);
+export async function readGroupManage(token: string, secret: string): Promise<GroupManagePayload> {
+  return decodeGroupManagePayload(await decode(token, 'bgm1', 'group-manage:v1', secret));
+}
+
+// Descriptive aliases used by callers that treat the invitation as the group
+// challenge itself.  Keep the explicit invitation names as the canonical API.
+export const issueGroupChallenge = issueGroupInvitation;
+export const readGroupChallenge = readGroupInvitation;
+export const issueGroupEntryToken = issueGroupEntry;
+export const readGroupEntryToken = readGroupEntry;
+export const issueGroupResultToken = issueGroupResult;
+export const readGroupResultToken = readGroupResult;
+export const issueGroupManageToken = issueGroupManage;
+export const readGroupManageToken = readGroupManage;

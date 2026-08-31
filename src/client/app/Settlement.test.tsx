@@ -1,6 +1,14 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChallengePayload } from '../../shared/contracts';
+
+const shareMocks = vi.hoisted(() => ({
+  createSettlementCard: vi.fn(async (input: unknown) => { void input; return new Blob(['png'], { type: 'image/png' }); }),
+  downloadBlob: vi.fn(),
+}));
+vi.mock('../sharing/settlementCard', () => ({ createSettlementCard: shareMocks.createSettlementCard }));
+vi.mock('../sharing/card', () => ({ downloadBlob: shareMocks.downloadBlob }));
+
 import { Settlement, Stats } from './Settlement';
 
 const base = { total: 0, held: 0, failed: 0, failureRate: 0, averageElapsedSeconds: 0 };
@@ -76,5 +84,32 @@ describe('Settlement forwarding', () => {
     expect(window.location.pathname).toBe('/');
     expect(sessionStorage.getItem('forward-video')).toBe('https://www.bilibili.com/video/BV1B7411m7LV');
     expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'popstate' }));
+  });
+
+  it('downloads a settlement long image without navigating and keeps group image data aggregate-only', async () => {
+    const pushState = vi.spyOn(history, 'pushState');
+    render(<Settlement challenge={challenge} result={{
+      outcome: 'held',
+      elapsedSeconds: 60,
+      reportUrl: 'https://example.com/report/br1.public',
+      stats: { total: 4, held: 2, failed: 2, failureRate: .5, averageElapsedSeconds: 22, buckets: [] },
+      scoreTrace: [{ timeSeconds: 0, score: 8 }],
+      resultUrl: 'https://example.com/g/results/bgr1.public',
+      groupTotal: 3,
+      groupParticipants: [{ nickname: '不应进入长图', outcome: 'failed', elapsedSeconds: 4 }],
+    }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '下载结算长图' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '已下载结算长图' })).toBeInTheDocument());
+    expect(shareMocks.createSettlementCard).toHaveBeenCalledWith(expect.objectContaining({
+      publicUrl: 'https://example.com/g/results/bgr1.public',
+      isGroup: true,
+      groupTotal: 3,
+    }));
+    const cardInput = shareMocks.createSettlementCard.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+    expect(cardInput).toBeDefined();
+    expect(cardInput).not.toHaveProperty('groupParticipants');
+    expect(shareMocks.downloadBlob).toHaveBeenCalledWith(expect.any(Blob), '绷绷炸弹-结算.png');
+    expect(pushState).not.toHaveBeenCalled();
   });
 });

@@ -1,15 +1,25 @@
-import { createShareCard, downloadBlob } from '../sharing/card';
-import type { AggregateStats, ChallengePayload, ScorePoint } from '../../shared/contracts';
+import { downloadBlob } from '../sharing/card';
+import { createSettlementCard } from '../sharing/settlementCard';
+import type { AggregateStats, ScorePoint } from '../../shared/contracts';
 import { createHeatmapBars } from './heatmap';
 import { ScoreTraceChart } from './ScoreTraceChart';
 import { CopyButton } from './CopyButton';
+import { compactLink } from './linkDisplay';
+import { PublicQrCode } from './PublicQrCode';
+import { GroupParticipantList } from './GroupParticipantList';
+import type { ChallengeDisplayPayload, GroupParticipant } from './groupTypes';
+import { useState } from 'react';
 
 interface SettlementResult {
   outcome: 'held' | 'failed';
   elapsedSeconds: number;
-  reportUrl: string;
+  reportUrl?: string;
   stats: AggregateStats;
   scoreTrace?: readonly ScorePoint[];
+  resultUrl?: string;
+  groupParticipants?: readonly GroupParticipant[];
+  groupNextCursor?: string | null;
+  groupTotal?: number;
 }
 
 export function Settlement({
@@ -17,18 +27,37 @@ export function Settlement({
   result,
   embedded = false,
 }: {
-  challenge: ChallengePayload;
+  challenge: ChallengeDisplayPayload;
   result: SettlementResult;
   embedded?: boolean;
 }) {
   const held = result.outcome === 'held';
-  const share = async () => downloadBlob(await createShareCard({
-    url: result.reportUrl,
-    video: challenge.video,
-    heading: held ? '成功绷住！' : '绷不住了！',
-    lines: [held ? '全程绷住，挑战成功' : '坚持到了这一秒', `${result.elapsedSeconds.toFixed(1)} 秒`],
-    stats: result.stats,
-  }), '绷绷炸弹-战报.png');
+  const isGroup = Boolean(result.resultUrl || result.groupParticipants || typeof result.groupTotal === 'number');
+  const publicUrl = result.resultUrl || result.reportUrl || '';
+  const [shareState, setShareState] = useState<'idle' | 'generating' | 'success' | 'error'>('idle');
+  const [shareError, setShareError] = useState('');
+  const share = async () => {
+    if (shareState === 'generating') return;
+    setShareState('generating');
+    setShareError('');
+    try {
+      if (!publicUrl) throw new Error('公开结算链接暂时不可用');
+      const blob = await createSettlementCard({
+        publicUrl,
+        video: challenge.video,
+        outcome: result.outcome,
+        elapsedSeconds: result.elapsedSeconds,
+        scoreTrace: result.scoreTrace ?? [],
+        stats: result.stats,
+        ...(isGroup ? { isGroup: true, groupTotal: result.groupTotal ?? result.groupParticipants?.length ?? 0 } : {}),
+      });
+      downloadBlob(blob, '绷绷炸弹-结算.png');
+      setShareState('success');
+    } catch (error) {
+      setShareState('error');
+      setShareError(error instanceof Error ? error.message : '结算长图生成失败，请重试');
+    }
+  };
   const forward = () => {
     sessionStorage.setItem('forward-video', `https://www.bilibili.com/video/${challenge.video.bvid}`);
     if (window.location.pathname === '/') return;
@@ -45,17 +74,27 @@ export function Settlement({
       </section>
       <ScoreTraceChart points={result.scoreTrace ?? []} outcome={result.outcome} durationSeconds={challenge.video.duration} />
       <Stats stats={result.stats} />
+      {isGroup && <section className="section group-settlement-results">
+        <div className="group-results-heading"><div><p className="step">群组进度</p><h2>大家的结果</h2></div><span className="group-results-total">已完成 {result.groupTotal ?? result.groupParticipants?.length ?? 0} 人</span></div>
+        <GroupParticipantList participants={result.groupParticipants ?? []} />
+        {result.resultUrl && <div className="group-result-access"><div><p className="muted">把结果页发回群里，随时查看最新完成记录。</p><div className="link-box"><strong>群组结果链接</strong><code aria-label="群组结果链接已缩略，可点击复制完整链接">{compactLink(result.resultUrl)}</code><CopyButton value={result.resultUrl} label="复制结果链接" /></div></div><PublicQrCode url={result.resultUrl} label="扫码查看结果" /></div>}
+        {result.groupNextCursor && <p className="hint">还有更多结果，可打开结果链接继续查看。</p>}
+      </section>}
       <section className="section">
         <h2>分享结果</h2>
         <div className="button-row">
-          <button type="button" onClick={() => void share()}>下载结果图</button>
-          <CopyButton value={result.reportUrl} label="复制公开战报链接" />
+          <button type="button" onClick={() => void share()} disabled={shareState === 'generating'} aria-busy={shareState === 'generating'}>
+            {shareState === 'generating' ? '正在生成结算长图…' : shareState === 'success' ? '已下载结算长图' : shareState === 'error' ? '重新生成结算长图' : '下载结算长图'}
+          </button>
+          {publicUrl && <CopyButton value={publicUrl} label={isGroup ? '复制结果链接' : '复制公开战报链接'} />}
           <a
             className="button-link"
             href="/"
             onClick={(event) => { event.preventDefault(); forward(); }}
           >转发此挑战</a>
         </div>
+        {shareState === 'success' && <p className="share-feedback" role="status">结算长图已下载，图中包含扫码查看结算页面的二维码。</p>}
+        {shareState === 'error' && <p className="error share-feedback" role="alert">{shareError || '结算长图生成失败，请重试。'}</p>}
       </section>
     </>
   );

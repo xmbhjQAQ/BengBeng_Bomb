@@ -16,7 +16,7 @@
     "LEADERBOARD_MIN_ATTEMPTS": "5",
     "LEADERBOARD_CACHE_SECONDS": "600",
     "LEADERBOARD_LIMIT": "20",
-    "BILIDIRECT_BASE_URL": "https://replace-with-your-bilidirect.example.com",
+    "BILIDIRECT_BASE_URL": "https://bilidirect.nagisa.icu",
     "BILIBILI_QN": "80"
   },
   "d1_databases": [{ "binding": "DB", "database_name": "bengbeng-bomb-db", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],

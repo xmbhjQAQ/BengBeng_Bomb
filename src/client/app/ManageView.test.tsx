@@ -79,4 +79,21 @@ describe('ManageView private result details', () => {
     expect(await screen.findByRole('heading', { name: '尚未打开或已销毁' })).toBeVisible();
     expect(screen.queryByText('本次表情变化')).not.toBeInTheDocument();
   });
+
+  it('routes group management capabilities to the group lifecycle API', async () => {
+    history.replaceState({}, '', '/manage#m=bgm1.group-token');
+    mocks.post
+      .mockResolvedValueOnce({ status: 'active', summary: { total: 2, held: 1, failed: 1 } })
+      .mockResolvedValueOnce({ status: 'ended', summary: { total: 2, held: 1, failed: 1 } });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+
+    render(<ManageView />);
+    fireEvent.click(screen.getByRole('button', { name: '刷新状态' }));
+    expect(await screen.findByRole('heading', { name: '群组挑战进行中' })).toBeVisible();
+    expect(mocks.post).toHaveBeenCalledWith('/api/groups/manage', {}, 'bgm1.group-token');
+
+    fireEvent.click(screen.getByRole('button', { name: '结束群组挑战' }));
+    expect(await screen.findByRole('heading', { name: '群组挑战已结束' })).toBeVisible();
+    expect(mocks.post).toHaveBeenLastCalledWith('/api/groups/manage?action=end', {}, 'bgm1.group-token');
+  });
 });

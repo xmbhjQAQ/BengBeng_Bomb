@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { post } from '../api/client';
-import { decodeScoreTrace, isRecord, type AggregateStats, type ChallengePayload, type PlaybackData, type ScorePoint } from '../../shared/contracts';
+import { decodeScoreTrace, isRecord, type AggregateStats, type PlaybackData, type ScorePoint } from '../../shared/contracts';
+import { CLIENT_CONFIG } from '../../shared/config/client';
 import { useSmileDemo } from '../gameplay/app/useSmileDemo';
 import { CameraPanel } from '../gameplay/app/CameraPanel';
 import { ChallengePanel } from '../gameplay/app/ChallengePanel';
 import { invalidReasonText } from '../gameplay/app/viewText';
 import { Settlement } from './Settlement';
 import { RECIPIENT_STEPS, recipientStage, type RecipientStage } from './recipientFlow';
+import { normalizeGroupComplete, normalizeGroupOpen, type ChallengeDisplayPayload, type GroupCompleted } from './groupTypes';
 
 interface Opened {
-  challenge: ChallengePayload;
+  challenge: ChallengeDisplayPayload;
   playback: PlaybackData;
   stats: AggregateStats;
   session: { state: 'opened' | 'started' | 'completed'; result_expires_at?: number | null } | null;
@@ -18,14 +20,19 @@ interface Opened {
 interface Completed {
   outcome: 'held' | 'failed';
   elapsedSeconds: number;
-  reportUrl: string;
+  reportUrl?: string;
   stats: AggregateStats;
   scoreTrace?: ReadonlyArray<Readonly<ScorePoint>>;
+  resultUrl?: string;
+  groupParticipants?: GroupCompleted['participants'];
+  groupNextCursor?: string | null;
+  groupTotal?: number;
 }
 
 type Submission = { status: 'idle' | 'submitting' | 'error'; error: string };
 
-const attemptKey = (token: string) => `bengbeng-attempt:${token}`;
+const attemptKey = (token: string, group = false) => `${group ? 'bengbeng-group-attempt' : 'bengbeng-attempt'}:${token}`;
+const groupAttemptIdKey = (token: string) => `bengbeng-group-attempt-id:${token}`;
 const completedKey = (token: string) => `bengbeng-completed:${token}`;
 
 const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -66,13 +73,16 @@ function readCachedCompleted(token: string, durationSeconds: number): Completed 
 
 const clearCachedCompleted = (token: string) => sessionStorage.removeItem(completedKey(token));
 
-export function ChallengeView({ token }: { token: string }) {
+export function ChallengeView({ token, group = false }: { token: string; group?: boolean }) {
   const demo = useSmileDemo();
   const [opened, setOpened] = useState<Opened | null>(null);
-  const [attempt, setAttempt] = useState(() => sessionStorage.getItem(attemptKey(token)) || '');
+  const [attempt, setAttempt] = useState(() => sessionStorage.getItem(attemptKey(token, group)) || '');
+  const [groupAttemptId, setGroupAttemptId] = useState(() => group ? sessionStorage.getItem(groupAttemptIdKey(token)) || '' : '');
   const [completed, setCompleted] = useState<Completed | null>(null);
   const [openError, setOpenError] = useState('');
   const [startError, setStartError] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [nicknameError, setNicknameError] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [submission, setSubmission] = useState<Submission>({ status: 'idle', error: '' });
@@ -84,22 +94,23 @@ export function ChallengeView({ token }: { token: string }) {
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
-    void post<Opened>('/api/challenges/open', { challengeToken: token })
-      .then((value) => {
+    void post<unknown>(group ? '/api/groups/open' : '/api/challenges/open', group ? { groupToken: token } : { challengeToken: token })
+      .then((raw) => {
+        const value = group ? normalizeGroupOpen(raw) : raw as Opened;
         if (value.session?.state === 'completed') {
           const expiresAt = value.session.result_expires_at;
           const resultIsCurrent = expiresAt === undefined || (typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000));
-          const cached = resultIsCurrent ? readCachedCompleted(token, value.challenge.video.duration) : null;
+          const cached = !group && resultIsCurrent ? readCachedCompleted(token, value.challenge.video.duration) : null;
           if (cached) setCompleted(cached);
-          else clearCachedCompleted(token);
+          else if (!group) clearCachedCompleted(token);
         } else {
-          clearCachedCompleted(token);
+          if (!group) clearCachedCompleted(token);
         }
         setOpened(value);
         demo.selectResolvedBilibili(value.playback);
       })
       .catch((error) => setOpenError(error instanceof Error ? error.message : '挑战加载失败'));
-  }, [demo, token]);
+  }, [demo, group, token]);
 
   const submitResult = useCallback(async () => {
     if (!localResult || !attempt || submitting.current) return;
@@ -107,17 +118,25 @@ export function ChallengeView({ token }: { token: string }) {
     closeCamera();
     setSubmission({ status: 'submitting', error: '' });
     try {
-      const value = await post<Completed>('/api/challenges/complete', {
-        challengeToken: token,
+      const body = {
+        ...(group ? { groupToken: token } : { challengeToken: token }),
         attemptToken: attempt,
+        ...(group ? { attemptId: groupAttemptId } : {}),
         outcome: localResult.outcome === 'completed' ? 'held' : 'failed',
         elapsedSeconds: localResult.videoPositionSeconds,
         scoreTrace: localResult.scoreTrace,
-      });
-      sessionStorage.removeItem(attemptKey(token));
-      const completedValue = { ...value, scoreTrace: localResult.scoreTrace };
+      };
+      const raw = await post<unknown>(group ? '/api/groups/complete' : '/api/challenges/complete', body);
+      const value: Completed = group
+        ? (() => { const result = normalizeGroupComplete(raw); return { ...result, resultUrl: result.resultUrl || undefined, groupParticipants: result.participants, groupNextCursor: result.nextCursor, groupTotal: result.total, scoreTrace: localResult.scoreTrace }; })()
+        : { ...(raw as Completed), scoreTrace: localResult.scoreTrace };
+      sessionStorage.removeItem(attemptKey(token, group));
+      if (group) sessionStorage.removeItem(groupAttemptIdKey(token));
+      const completedValue = value;
       setCompleted(completedValue);
-      try { sessionStorage.setItem(completedKey(token), JSON.stringify(completedValue)); } catch { /* private storage can be unavailable */ }
+      if (!group) {
+        try { sessionStorage.setItem(completedKey(token), JSON.stringify(completedValue)); } catch { /* private storage can be unavailable */ }
+      }
       setSubmission({ status: 'idle', error: '' });
       void document.exitFullscreen?.().catch(() => undefined);
     } catch (error) {
@@ -127,7 +146,7 @@ export function ChallengeView({ token }: { token: string }) {
         error: error instanceof Error ? error.message : '结果提交失败',
       });
     }
-  }, [attempt, closeCamera, localResult, token]);
+  }, [attempt, closeCamera, group, groupAttemptId, localResult, token]);
 
   useEffect(() => {
     if (localResult) void submitResult();
@@ -135,17 +154,26 @@ export function ChallengeView({ token }: { token: string }) {
 
   const start = async () => {
     if (!demo.canStart || starting) return;
+    if (group && !nickname.trim()) {
+      setNicknameError('请先填写昵称，再开始挑战。');
+      return;
+    }
     setStarting(true);
     setStartError('');
+    setNicknameError('');
     try {
       let currentAttempt = attempt;
       if (!currentAttempt) {
-        const value = await post<{ attemptToken: string }>('/api/challenges/start', {
-          challengeToken: token,
-        });
+        const value = await post<{ attemptToken: string; attemptId?: string }>(group ? '/api/groups/start' : '/api/challenges/start', group
+          ? { groupToken: token, nickname: nickname.trim() }
+          : { challengeToken: token });
         currentAttempt = value.attemptToken;
-        sessionStorage.setItem(attemptKey(token), currentAttempt);
+        sessionStorage.setItem(attemptKey(token, group), currentAttempt);
         setAttempt(currentAttempt);
+        if (group && value.attemptId) {
+          sessionStorage.setItem(groupAttemptIdKey(token), value.attemptId);
+          setGroupAttemptId(value.attemptId);
+        }
       }
       try {
         await document.documentElement.requestFullscreen?.();
@@ -209,10 +237,10 @@ export function ChallengeView({ token }: { token: string }) {
     <main className={`page challenge-page${active ? ' is-active' : ''}`} data-stage={stage}>
       <header className="hero compact">
         <p className="eyebrow">
-          {opened.challenge.mode === 'self' ? '单人挑战' : opened.challenge.recipient ? `${opened.challenge.recipient}，接招吧` : '一枚绷绷炸弹'}
+          {group ? '群组挑战' : opened.challenge.mode === 'self' ? '单人挑战' : opened.challenge.recipient ? `${opened.challenge.recipient}，接招吧` : '一枚绷绷炸弹'}
         </p>
-        <h1>{opened.challenge.mode === 'self' ? '看看你能绷到第几秒' : `${opened.challenge.initiator ?? '朋友'} 挑战你`}</h1>
-        <p className="intro">{opened.challenge.message || '看看你能否绷住。'}</p>
+        <h1>{group ? '群友们，看看谁能绷住' : opened.challenge.mode === 'self' ? '看看你能绷到第几秒' : `${opened.challenge.initiator ?? '朋友'} 挑战你`}</h1>
+        <p className="intro">{opened.challenge.message || (group ? '填上昵称，完成后就能在群组结果里看到自己的记录。' : '看看你能否绷住。')}</p>
       </header>
       {!active && <StageProgress stage={stage} />}
       <div className="challenge-stage">
@@ -245,11 +273,12 @@ export function ChallengeView({ token }: { token: string }) {
         {(stage === 'ready' || stage === 'active') && (
           <>
             {stage === 'ready' && (
-              <section className="stage-heading ready-heading" key="ready-heading">
+            <section className="stage-heading ready-heading" key="ready-heading">
                 <p className="step">03 · 准备挑战</p>
                 <h2>校准成功，最后确认一下</h2>
                 <p>调整音量和坐姿。点击“开始挑战”后才正式计时。</p>
                 <VideoIntro video={opened.challenge.video} />
+                {group && <label className="group-nickname-field">你的昵称<input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={nickname} onChange={(event) => { setNickname(event.target.value); setNicknameError(''); }} placeholder="例如：小明" autoComplete="nickname" /><small>{nickname.length}/{CLIENT_CONFIG.limits.nickname}</small>{nicknameError && <span className="error" role="alert">{nicknameError}</span>}</label>}
               </section>
             )}
             <CameraPanel key="camera" {...cameraProps} compact={stage === 'ready'} bubble={stage === 'active'} />
@@ -313,7 +342,7 @@ function StageProgress({ stage }: { stage: RecipientStage }) {
   );
 }
 
-function VideoIntro({ video }: { video: ChallengePayload['video'] }) {
+function VideoIntro({ video }: { video: ChallengeDisplayPayload['video'] }) {
   return (
     <div className="video-meta challenge-intro-video">
       <div className="video-cover">

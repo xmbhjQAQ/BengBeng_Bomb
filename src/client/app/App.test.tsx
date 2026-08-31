@@ -13,6 +13,8 @@ describe('App SPA navigation',()=>{
     history.replaceState({},'', '/');
     const push=vi.spyOn(history,'pushState');
     render(<App/>);
+    expect(screen.getByRole('link', { name: 'xmbhjQAQ' })).toHaveAttribute('href', 'https://space.bilibili.com/174355920');
+    expect(screen.getByRole('link', { name: 'Github' })).toHaveAttribute('href', 'https://github.com/xmbhjQAQ?tab=repositories');
     fireEvent.click(screen.getByRole('button',{name:'open-self'}));
     expect(push).toHaveBeenCalledWith({},'', '/c/self-token');
     expect(screen.getByText('challenge:self-token')).toBeVisible();

@@ -13,6 +13,9 @@ export function compactLink(value: string, privateLink = false): string {
     const segments = url.pathname.split('/').filter(Boolean);
     const last = segments.at(-1) ?? '';
     if (segments[0] === 'c' && last) return `${origin}/c/…${last.slice(-4)}`;
+    if (segments[0] === 'g' && segments[1] === 'results' && last) return `${origin}/g/results/…${last.slice(-4)}`;
+    if (segments[0] === 'g' && segments[1] === 'entry' && last) return `${origin}/g/entry/…${last.slice(-4)}`;
+    if (segments[0] === 'g' && last) return `${origin}/g/…${last.slice(-4)}`;
     if (segments[0] === 'report' && last) return `${origin}/report/…${last.slice(-4)}`;
     if (path.length <= 34) return `${origin}${path}`;
     return `${origin}${path.slice(0, 18)}…${path.slice(-8)}`;

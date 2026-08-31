@@ -1,4 +1,4 @@
-import { SCORE_TRACE_MAX_POINTS, type ChallengeMode, type ChallengePayload, type Outcome, type ReportPayload, type ScorePoint, type VideoMetadata } from './types';
+import { SCORE_TRACE_MAX_POINTS, type ChallengePayload, type GroupEntryPayload, type GroupInvitationPayload, type GroupManagePayload, type GroupResultPayload, type Outcome, type ReportPayload, type ScorePoint, type SingleChallengeMode, type VideoMetadata } from './types';
 import { CLIENT_CONFIG } from '../config/client';
 
 export class ContractError extends Error {
@@ -17,6 +17,9 @@ const positive = (value: unknown, name: string) => {
   if (!Number.isFinite(number) || number <= 0) throw new ContractError('INVALID_FIELD', `${name}格式不正确`);
   return number;
 };
+export function decodeNickname(value: unknown): string {
+  return text(value, '昵称', CLIENT_CONFIG.limits.nickname);
+}
 export function decodeVideoMetadata(value: unknown): VideoMetadata {
   if (!isRecord(value)) throw new ContractError('INVALID_VIDEO', '视频信息格式不正确');
   const bvid = text(value.bvid, 'BV号', 24);
@@ -28,11 +31,54 @@ export function decodeChallengePayload(value: unknown): ChallengePayload {
   const createdAt = positive(value.createdAt, '创建时间');
   const expiresAt = positive(value.expiresAt, '过期时间');
   if (expiresAt <= createdAt) throw new ContractError('INVALID_TOKEN', '挑战有效期不正确');
-  const mode: ChallengeMode | null = value.mode === undefined || value.mode === 'classic' ? 'classic' : value.mode === 'self' ? 'self' : null;
+  const mode: SingleChallengeMode | null = value.mode === undefined || value.mode === 'classic' ? 'classic' : value.mode === 'self' ? 'self' : null;
   if (!mode) throw new ContractError('INVALID_FIELD', '挑战模式不正确');
   const common = { v: 1 as const, kind: 'challenge' as const, video: decodeVideoMetadata(value.video), createdAt, expiresAt, nonce: text(value.nonce, '随机标识', 80), mode };
   if (mode === 'self') return common;
   return { ...common, initiator: text(value.initiator, '昵称', CLIENT_CONFIG.limits.nickname), recipient: value.recipient ? text(value.recipient, '接收者', CLIENT_CONFIG.limits.recipient) : undefined, message: value.message ? text(value.message, '留言', CLIENT_CONFIG.limits.message) : undefined };
+}
+
+function decodeGroupWindow(value: Record<string, unknown>, kind: string, errorCode = 'INVALID_GROUP_TOKEN') {
+  const createdAt = positive(value.createdAt, '创建时间');
+  const expiresAt = positive(value.expiresAt, '过期时间');
+  const resultExpiresAt = positive(value.resultExpiresAt, '结果保留时间');
+  if (expiresAt <= createdAt || resultExpiresAt <= expiresAt) throw new ContractError(errorCode, `${kind}有效期不正确`);
+  const groupId = text(value.groupId, '群组标识', 80);
+  const video = decodeVideoMetadata(value.video);
+  const nonce = text(value.nonce, '随机标识', 80);
+  return { v: 1 as const, groupId, video, createdAt, expiresAt, resultExpiresAt, nonce };
+}
+
+export function decodeGroupInvitationPayload(value: unknown): GroupInvitationPayload {
+  if (!isRecord(value) || value.v !== 1 || value.kind !== 'group-invitation') throw new ContractError('INVALID_GROUP_TOKEN', '群组邀请凭证格式不正确');
+  return {
+    ...decodeGroupWindow(value, '群组邀请'),
+    kind: 'group-invitation',
+    mode: 'group',
+    ...(value.initiator ? { initiator: text(value.initiator, '昵称', CLIENT_CONFIG.limits.nickname) } : {}),
+    ...(value.message ? { message: text(value.message, '留言', CLIENT_CONFIG.limits.message) } : {}),
+  };
+}
+
+export function decodeGroupEntryPayload(value: unknown): GroupEntryPayload {
+  if (!isRecord(value) || value.v !== 1 || value.kind !== 'group-entry') throw new ContractError('INVALID_GROUP_ENTRY_TOKEN', '群组入口凭证格式不正确');
+  return {
+    ...decodeGroupWindow(value, '群组入口', 'INVALID_GROUP_ENTRY_TOKEN'),
+    kind: 'group-entry',
+    mode: 'group',
+    ...(value.initiator ? { initiator: text(value.initiator, '昵称', CLIENT_CONFIG.limits.nickname) } : {}),
+    ...(value.message ? { message: text(value.message, '留言', CLIENT_CONFIG.limits.message) } : {}),
+  };
+}
+
+export function decodeGroupResultPayload(value: unknown): GroupResultPayload {
+  if (!isRecord(value) || value.v !== 1 || value.kind !== 'group-result') throw new ContractError('INVALID_GROUP_RESULT_TOKEN', '群组结果凭证格式不正确');
+  return { ...decodeGroupWindow(value, '群组结果', 'INVALID_GROUP_RESULT_TOKEN'), kind: 'group-result' };
+}
+
+export function decodeGroupManagePayload(value: unknown): GroupManagePayload {
+  if (!isRecord(value) || value.v !== 1 || value.kind !== 'group-manage') throw new ContractError('INVALID_GROUP_MANAGE_TOKEN', '群组管理凭证格式不正确');
+  return { ...decodeGroupWindow(value, '群组管理', 'INVALID_GROUP_MANAGE_TOKEN'), kind: 'group-manage' };
 }
 export function decodeOutcome(value: unknown): Outcome {
   if (value !== 'held' && value !== 'failed') throw new ContractError('INVALID_OUTCOME', '结果格式不正确');
