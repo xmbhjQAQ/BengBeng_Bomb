@@ -19,9 +19,9 @@
     "BILIDIRECT_BASE_URL": "https://bilidirect.nagisa.icu",
     "BILIBILI_QN": "80"
   },
-  // Define `env.staging` and `env.production` locally for deployment with
-  // real D1 IDs, PUBLIC_ORIGIN, and RATE_LIMITER_* bindings. They are kept
-  // out of this shared local profile so placeholder resources cannot deploy.
+  // The default profile is bound to the current production D1. Define
+  // `env.staging` separately with its own D1 ID, PUBLIC_ORIGIN and
+  // RATE_LIMITER_* bindings before using a staging deployment.
   "d1_databases": [{ "binding": "DB", "database_name": "bengbeng_bomb", "database_id": "ac62916d-399c-405e-acd9-7694b61171f6", "migrations_dir": "migrations" }],
   "triggers": { "crons": ["17 * * * *"] }
 }

@@ -26,7 +26,7 @@
 
 ```powershell
 npm run release:preflight -- --env staging
-npx wrangler d1 migrations apply bengbeng_bomb --remote --env staging
+npx wrangler d1 migrations apply DB --remote --env staging
 npx wrangler secret put APP_SIGNING_SECRET --env staging
 npx wrangler secret put BILIDIRECT_API_KEY --env staging
 npm run release:preflight -- --env staging --secrets-checked
