@@ -40,6 +40,7 @@ export interface SmileDemoController {
   canStart: boolean;
   selectBilibili(input: string): Promise<void>;
   selectResolvedBilibili(playback: PlaybackData): void;
+  retryVideo(): void;
   openCamera(): void;
   closeCamera(): void;
   retryDetector(): void;

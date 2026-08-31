@@ -16,4 +16,9 @@ describe('capability separation',()=>{
     const oldReport={v:1,kind:'report',video:challenge.video,outcome:'held',elapsedSeconds:60,issuedAt:120,expiresAt:190,nonce:'old'};const body=base64UrlEncode(canonicalJson(oldReport));const token=`br1.${body}.${await sign(secret,'report:v1',body)}`;
     expect(await readReport(token,secret,150)).toEqual(oldReport);
   });
+  it('rejects oversized or structurally ambiguous bearer strings before verification', async () => {
+    await expect(readChallenge(`bc1.${'a'.repeat(20_000)}.signature`, secret, 150)).rejects.toMatchObject({ code: 'INVALID_TOKEN' });
+    const manage = await issueManage('challenge-id', secret);
+    await expect(readManage(`${manage}.extra`, secret)).rejects.toMatchObject({ code: 'INVALID_MANAGE_TOKEN' });
+  });
 });

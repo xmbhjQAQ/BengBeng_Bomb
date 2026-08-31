@@ -22,6 +22,10 @@ class FakeD1 {
 
   prepare(query: string) { return new FakeStatement(this, query); }
   first(statement: FakeStatement) {
+    if (statement.query.includes('attempt_token_hash=?')) {
+      const row = this.sessions.get(String(statement.args[0])) as (SessionRow & { attempt_token_hash?: string }) | undefined;
+      return row?.attempt_token_hash === String(statement.args[1]) ? { ok: 1 } : null;
+    }
     if (statement.query.includes('FROM challenge_sessions')) {
       return this.sessions.get(String(statement.args[0])) ?? null;
     }
@@ -141,4 +145,12 @@ describe('SessionRepository aggregate buckets', () => {
     expect(await repository.destroy('trace')).toBe(true);expect(db.traces.has('trace')).toBe(false);expect(db.sessions.has('trace')).toBe(false);
   });
   it('deletes an expired trace on read',async()=>{const db=new FakeD1();db.traces.set('old',{points_json:'[]',expires_at:100});const repository=new SessionRepository(db as unknown as D1Database);expect(await repository.scoreTrace('old',100)).toEqual([]);expect(db.traces.has('old')).toBe(false);});
+  it('matches the bearer after completion and rejects a different bearer', async () => {
+    const db = new FakeD1();
+    db.sessions.set('done', { ...started('done'), state: 'completed', attempt_token_hash: 'hash-done' } as SessionRow & { attempt_token_hash: string });
+    const repository = new SessionRepository(db as unknown as D1Database);
+
+    expect(await repository.attemptMatches('done', 'hash-done')).toBe(true);
+    expect(await repository.attemptMatches('done', 'wrong-hash')).toBe(false);
+  });
 });

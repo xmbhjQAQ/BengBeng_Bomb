@@ -56,7 +56,7 @@ const env = (db: ManageD1): Env => ({
   DB: db as unknown as D1Database,
   ASSETS: {} as Fetcher,
   APP_SIGNING_SECRET: secret,
-  BILIDIRECT_API_KEY: '',
+  BILIDIRECT_API_KEY: 'test-api-key',
   BILIDIRECT_BASE_URL: 'https://api.example.com',
 });
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;

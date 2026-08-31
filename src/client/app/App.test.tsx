@@ -22,4 +22,10 @@ describe('App SPA navigation',()=>{
     fireEvent.popState(window);
     expect(screen.getByRole('button',{name:'open-self'})).toBeVisible();
   });
+  it('shows a recovery page for a malformed encoded token instead of throwing',()=>{
+    history.replaceState({},'', '/c/%E0%A4%A');
+    render(<App/>);
+    expect(screen.getByRole('heading', { name: '链接无法打开' })).toBeVisible();
+    expect(screen.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/');
+  });
 });

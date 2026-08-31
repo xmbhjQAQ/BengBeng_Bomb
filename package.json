@@ -8,6 +8,8 @@
     "dev:worker": "wrangler dev --ip 0.0.0.0",
     "dev:phone": "npm run build && wrangler dev --tunnel",
     "seed:leaderboard": "wrangler d1 execute bengbeng-bomb-db --local --file scripts/seed-leaderboard.sql",
+    "release:preflight": "node scripts/release-preflight.mjs",
+    "asset:smoke": "node scripts/asset-smoke.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "type-check": "tsc -b --pretty false",

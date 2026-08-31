@@ -270,13 +270,22 @@ export class GroupRepository {
     return result.meta.changes === 1;
   }
 
-  async cleanup(now: number): Promise<{ changes: number }> {
+  async cleanup(now: number): Promise<{ parentChanges: number; attemptChanges: number; blockChanges: number; changes: number }> {
     // Parent deletion cascades attempts, and preserves video-level aggregates.
+    // Count the dependent rows before deleting the parent so the scheduled
+    // log can expose cleanup backlog without logging any participant fields.
+    const attemptCount = await this.db.prepare(`SELECT COUNT(*) AS count
+      FROM group_attempts
+      WHERE group_id IN (SELECT group_id FROM group_challenges WHERE result_expires_at<=?)`)
+      .bind(now).first<{ count: number }>();
     const results = await this.db.batch([
       this.db.prepare('DELETE FROM group_challenges WHERE result_expires_at<=?').bind(now),
       this.db.prepare('DELETE FROM group_challenge_blocks WHERE expires_at<=?').bind(now),
     ]);
-    return { changes: (results[0]?.meta.changes ?? 0) + (results[1]?.meta.changes ?? 0) };
+    const parentChanges = results[0]?.meta.changes ?? 0;
+    const blockChanges = results[1]?.meta.changes ?? 0;
+    const attemptChanges = Number(attemptCount?.count ?? 0);
+    return { parentChanges, attemptChanges, blockChanges, changes: parentChanges + attemptChanges + blockChanges };
   }
 
   /** Build the public response projection without leaking internal attempt IDs. */

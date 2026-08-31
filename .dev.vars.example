@@ -1,2 +1,7 @@
 APP_SIGNING_SECRET=replace-with-at-least-32-random-characters
 BILIDIRECT_API_KEY=replace-with-your-server-api-key
+# Optional local tuning; production values belong to the selected Wrangler environment.
+# PUBLIC_ORIGIN=https://your-domain.example
+# BILIDIRECT_TIMEOUT_MS=8000
+# BILIDIRECT_JSON_MAX_BYTES=524288
+# BILIDIRECT_TEXT_MAX_BYTES=4194304

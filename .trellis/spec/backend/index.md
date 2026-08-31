@@ -18,6 +18,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Challenge capability, Worker, D1 and bilidirect contracts | Active |
+| [Release Hardening](./release-hardening.md) | Deployment, upstream, limiter and retention safety contracts | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 
 ---

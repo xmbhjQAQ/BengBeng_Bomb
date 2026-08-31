@@ -80,6 +80,8 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
   const expectedPause = useRef(0);
   const expectedSeek = useRef(0);
   const playbackAuthorized = useRef(false);
+  const refreshKeyRef = useRef<string | null>(null);
+  const refreshUsedRef = useRef(false);
 
   const setMediaHandlers = useCallback((handlers: BilibiliPlayerMediaHandlers) => {
     mediaHandlersRef.current = handlers;
@@ -99,6 +101,9 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
   }, []);
 
   const load = useCallback(async (input: string) => {
+    // A deliberate user reload starts a fresh one-time recovery budget.
+    refreshKeyRef.current = null;
+    refreshUsedRef.current = false;
     let parsed: ReturnType<typeof parseBilibiliInput>;
     try {
       parsed = parseBilibiliInput(input);
@@ -140,6 +145,12 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
 
   useEffect(() => {
     if (!selection || !container) return;
+    const selectionKey = `${selection.bvid}:${selection.page ?? options.page}`;
+    if (refreshKeyRef.current !== selectionKey) {
+      refreshKeyRef.current = selectionKey;
+      refreshUsedRef.current = false;
+    }
+    let refreshController: AbortController | null = null;
     const mount = document.createElement('div');
     mount.className = 'artplayer-app';
     container.replaceChildren(mount);
@@ -244,6 +255,7 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
     let mediaCandidateIndex = 0;
     let switchingCandidate = false;
     let finalErrorReported = false;
+    let refreshPending = false;
     const hasVideoTrack = () => video.videoWidth > 0 && video.videoHeight > 0;
     const clearMetadataTimer = () => {
       if (metadataTimer !== null) {
@@ -259,6 +271,30 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
       setReady(false);
       setPlayerError(message);
       mediaHandlersRef.current?.onError();
+    };
+
+    const refreshSelection = () => {
+      if (refreshUsedRef.current || refreshPending) return false;
+      refreshUsedRef.current = true;
+      refreshPending = true;
+      refreshController = new AbortController();
+      setPlayerError('视频地址已失效，正在重新获取…');
+      void parseVideoByBvid({
+        bvid: selection.bvid,
+        page: selection.page ?? options.page,
+        qn: options.qn,
+        apiBaseUrl: options.apiBaseUrl,
+        apiKey: options.apiKey,
+        signal: refreshController.signal,
+      }).then((data) => {
+        if (playerRef.current === player) loadResolved(data);
+      }).catch(() => {
+        if (playerRef.current === player) reportFinalError('视频地址已失效，请重新加载视频。');
+      }).finally(() => {
+        refreshPending = false;
+        refreshController = null;
+      });
+      return true;
     };
 
     const switchToNextCandidate = () => {
@@ -282,7 +318,9 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
       clearMetadataTimer();
       metadataTimer = window.setTimeout(() => {
         if (playerRef.current !== player || hasVideoTrack() || finalErrorReported) return;
+        if (refreshPending) return;
         if (switchToNextCandidate()) return;
+        if (refreshSelection()) return;
         reportFinalError(t.video.playerNoVisual);
       }, Math.max(500, options.metadataTimeoutMs));
     };
@@ -294,7 +332,9 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
       setPlayerError(null);
     };
     const markVideoError = () => {
+      if (switchingCandidate || refreshPending) return;
       if (switchToNextCandidate()) return;
+      if (refreshSelection()) return;
       reportFinalError(t.video.playerFailed);
     };
     const handlePause = () => {
@@ -337,6 +377,8 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
 
     return () => {
       clearMetadataTimer();
+      refreshController?.abort();
+      refreshController = null;
       video.removeEventListener('loadedmetadata', markReady);
       video.removeEventListener('loadeddata', markReady);
       video.removeEventListener('canplay', markReady);
@@ -359,7 +401,7 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
       player.destroy(false);
       mount.remove();
     };
-  }, [container, options.metadataTimeoutMs, selection]);
+  }, [container, loadResolved, options.apiBaseUrl, options.apiKey, options.metadataTimeoutMs, options.page, options.qn, selection]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -414,6 +456,11 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
     }
   }, []);
 
+  const retryVideo = useCallback(() => {
+    if (!selection?.bvid) return;
+    void load(`https://www.bilibili.com/video/${selection.bvid}`);
+  }, [load, selection]);
+
   const consumePause = useCallback(() => {
     if (expectedPause.current < 1) return false;
     expectedPause.current -= 1;
@@ -435,6 +482,7 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
     ready,
     element,
     load,
+    retryVideo,
     loadResolved,
     setContainerElement: setContainer,
     setMediaHandlers,

@@ -6,11 +6,12 @@ import { randomToken, sha256 } from './capabilities/crypto';
 import { readConfig, type Env } from './config';
 import { GroupRepository, GroupRepositoryError, type GroupAttemptRow } from './repositories/groups';
 import { SessionRepository } from './repositories/sessions';
-import { bearer, failure, json, publicJson, readJson, secureAsset } from './security/http';
+import { bearer, failure, json, publicJson, rateLimited, readJson, secureAsset } from './security/http';
+import { checkRateLimit, type RateLimitKind } from './security/rateLimit';
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const videoKey = (bvid: string, cid: number) => `${bvid}:${cid}`;
-const publicOrigin = (request: Request) => new URL(request.url).origin;
+const publicOrigin = (request: Request, config: ReturnType<typeof readConfig>) => config.publicOrigin ?? new URL(request.url).origin;
 const groupTokenFrom = (body: Record<string, unknown>, names: string[]) => {
   for (const name of names) if (typeof body[name] === 'string' && body[name]) return body[name] as string;
   return '';
@@ -62,6 +63,11 @@ async function leaderboard(request: Request, repo: SessionRepository, config: Re
 
 async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url); const config = readConfig(env); const repo = new SessionRepository(env.DB); const groupRepo = new GroupRepository(env.DB); const now = nowSeconds();
+  const rateLimitKind: RateLimitKind | null = url.pathname === '/api/bilibili/parse' || url.pathname === '/api/danmaku' || url.pathname.endsWith('/open') ? 'expensive' : url.pathname === '/api/leaderboard' || url.pathname.includes('/results') || url.pathname === '/api/groups/entry' || url.pathname === '/api/reports/resolve' ? 'public-read' : request.method === 'POST' || request.method === 'DELETE' ? 'mutation' : null;
+  if (rateLimitKind) {
+    const binding = rateLimitKind === 'expensive' ? env.RATE_LIMITER_EXPENSIVE : rateLimitKind === 'public-read' ? env.RATE_LIMITER_PUBLIC : env.RATE_LIMITER_MUTATION;
+    if (!await checkRateLimit(binding, request, rateLimitKind)) return rateLimited();
+  }
   if (url.pathname === '/api/health' && request.method === 'GET') return json({ service: 'bengbeng-bomb', ok: true });
   if (url.pathname === '/api/leaderboard' && request.method === 'GET') return leaderboard(request,repo,config,ctx);
   if (url.pathname === '/api/bilibili/parse' && request.method === 'POST') {
@@ -86,7 +92,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
       const entryToken = await issueGroupEntry(groupEntryPayload(groupPayload), env.APP_SIGNING_SECRET);
       const resultToken = await issueGroupResult(groupResultPayload(groupPayload, resultExpiresAt, randomToken(18)), env.APP_SIGNING_SECRET);
       const manageToken = await issueGroupManage(groupManagePayload(groupPayload, resultExpiresAt), env.APP_SIGNING_SECRET);
-      const origin = publicOrigin(request);
+      const origin = publicOrigin(request, config);
       const invitationUrl = `${origin}/g/${encodeURIComponent(challengeToken)}`;
       const entryUrl = `${origin}/g/entry/${encodeURIComponent(entryToken)}`;
       const resultUrl = `${origin}/g/results/${encodeURIComponent(resultToken)}`;
@@ -96,7 +102,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
       return json({ mode, challengeToken, challengeUrl: invitationUrl, groupInvitationToken: challengeToken, groupInvitationUrl: invitationUrl, invitationUrl, entryToken, groupEntryToken: entryToken, entryUrl, groupEntryUrl: entryUrl, resultToken, groupResultToken: resultToken, groupResultUrl: resultUrl, resultUrl, manageToken, manageUrl, expiresAt, resultExpiresAt });
     }
     const payload: ChallengePayload = { v:1, kind:'challenge', video:ticket.video, ...(mode === 'classic' ? {initiator,...(recipient?{recipient}:{}),...(message?{message}:{})} : {}), createdAt:now,expiresAt:now+config.challengeTtlSeconds,nonce:randomToken(18),mode };
-    const challengeToken = await issueChallenge(payload, env.APP_SIGNING_SECRET); const id = await challengeId(challengeToken); const manageToken = await issueManage(id, env.APP_SIGNING_SECRET); const origin = publicOrigin(request);
+    const challengeToken = await issueChallenge(payload, env.APP_SIGNING_SECRET); const id = await challengeId(challengeToken); const manageToken = await issueManage(id, env.APP_SIGNING_SECRET); const origin = publicOrigin(request, config);
     return json({ challengeToken, challengeUrl:`${origin}/c/${encodeURIComponent(challengeToken)}`, manageUrl:`${origin}/manage#m=${encodeURIComponent(manageToken)}&c=${encodeURIComponent(challengeToken)}`, expiresAt:payload.expiresAt });
   }
   if (url.pathname === '/api/groups/entry' && request.method === 'POST') {
@@ -108,7 +114,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const key = videoKey(payload.video.bvid, payload.video.cid);
     const invitationPayload = groupInvitationPayload(payload);
     const resultToken = await issueGroupResult(groupResultPayload(invitationPayload, payload.resultExpiresAt), env.APP_SIGNING_SECRET);
-    const resultUrl = `${publicOrigin(request)}/g/results/${encodeURIComponent(resultToken)}`;
+    const resultUrl = `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`;
     let group = await groupRepo.get(payload.groupId);
     // The first universal-entry visit is the lazy group open.  It creates one
     // parent row (never a participant row) so the visitor can choose to join;
@@ -131,7 +137,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const canParticipate = state === 'active';
     const resultPage = await groupRepo.resultsPage({ group, video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
     const invitationToken = canParticipate ? await issueGroupInvitation(invitationPayload, env.APP_SIGNING_SECRET) : undefined;
-    const invitationUrl = invitationToken ? `${publicOrigin(request)}/g/${encodeURIComponent(invitationToken)}` : undefined;
+    const invitationUrl = invitationToken ? `${publicOrigin(request, config)}/g/${encodeURIComponent(invitationToken)}` : undefined;
     return json({
       entry: { state, video, createdAt: group.created_at, expiresAt: group.expires_at, resultExpiresAt: group.result_expires_at, canParticipate, ...(payload.initiator ? { initiator: payload.initiator } : {}), ...(payload.message ? { message: payload.message } : {}) },
       ...(invitationToken ? { invitationToken, groupInvitationToken: invitationToken, invitationUrl, groupInvitationUrl: invitationUrl } : {}),
@@ -155,7 +161,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     await groupRepo.upsertVideo(key, payload.video, now);
     const resultToken = await issueGroupResult(groupResultPayload(payload, resultExpiresAt), env.APP_SIGNING_SECRET);
     const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
-    return json({ challenge: payload, group: { ...payload, state: group.state }, playback: { ...(await resolveBilibili(payload.video.bvid, payload.video.page, config, env.BILIDIRECT_API_KEY)), danmakuUrl: `/api/danmaku?group=${encodeURIComponent(token)}` }, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total, resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request)}/g/results/${encodeURIComponent(resultToken)}` });
+    return json({ challenge: payload, group: { ...payload, state: group.state }, playback: { ...(await resolveBilibili(payload.video.bvid, payload.video.page, config, env.BILIDIRECT_API_KEY)), danmakuUrl: `/api/danmaku?group=${encodeURIComponent(token)}` }, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total, resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}` });
   }
   if (url.pathname === '/api/groups/start' && request.method === 'POST') {
     const body = await readJson(request);
@@ -216,7 +222,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     if (!row || row.state !== 'completed' || !row.outcome) return failure('GROUP_COMPLETE_CONFLICT', '结果提交冲突，请刷新后重试', 409);
     const resultToken = await issueGroupResult(groupResultPayload(payload, resultExpiresAt), env.APP_SIGNING_SECRET);
     const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
-    return json({ outcome: row.outcome, elapsedSeconds: row.outcome === 'held' ? payload.video.duration : Number(row.failed_at_seconds ?? 0), result: groupResultView(row), resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request)}/g/results/${encodeURIComponent(resultToken)}`, resultExpiresAt: group.result_expires_at, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total });
+    return json({ outcome: row.outcome, elapsedSeconds: row.outcome === 'held' ? payload.video.duration : Number(row.failed_at_seconds ?? 0), result: groupResultView(row), resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, resultExpiresAt: group.result_expires_at, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total });
   }
   if (url.pathname === '/api/groups/results' && request.method === 'POST') {
     const body = await readJson(request);
@@ -271,10 +277,10 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const body=await readJson(request); if(!isRecord(body)||typeof body.challengeToken!=='string') return failure('INVALID_INPUT','缺少挑战凭证'); await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); const attemptToken=randomToken(24); const claimed=await repo.start(id,await sha256(attemptToken),now); if(!claimed){const current=await repo.get(id);return failure(current?.state==='completed'?'ALREADY_COMPLETED':'ALREADY_STARTED',current?.state==='completed'?'挑战已完成':'挑战已经开始',409);} return json({attemptToken});
   }
   if (url.pathname === '/api/challenges/complete' && request.method === 'POST') {
-    const body=await readJson(request,48_000); if(!isRecord(body)||typeof body.challengeToken!=='string'||typeof body.attemptToken!=='string') return failure('INVALID_INPUT','结果信息不完整'); const payload=await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); const scoreTrace=decodeScoreTrace(body.scoreTrace??[],payload.video.duration); if(!await repo.attemptMatches(id,await sha256(body.attemptToken))){const existing=await repo.get(id); if(existing?.state!=='completed') return failure('INVALID_ATTEMPT','本轮挑战凭证无效',403);}
+    const body=await readJson(request,48_000); if(!isRecord(body)||typeof body.challengeToken!=='string'||typeof body.attemptToken!=='string') return failure('INVALID_INPUT','结果信息不完整'); const payload=await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); if(!await repo.attemptMatches(id,await sha256(body.attemptToken))) return failure('INVALID_ATTEMPT','本轮挑战凭证无效',403); const scoreTrace=decodeScoreTrace(body.scoreTrace??[],payload.video.duration);
     const outcome=decodeOutcome(body.outcome); const rawElapsed=Number(body.elapsedSeconds); if(!Number.isFinite(rawElapsed)||rawElapsed<0||rawElapsed>payload.video.duration+3) return failure('INVALID_RESULT','坚持时间不正确'); const elapsed=outcome==='held'?payload.video.duration:Math.min(rawElapsed,payload.video.duration); const expiresAt=now+config.resultTtlSeconds;
     const result=await repo.complete({id,outcome,elapsed,now,resultExpiresAt:expiresAt,bucketSize:CLIENT_CONFIG.heatmapBucketSeconds,scoreTrace}); const row=result.row??await repo.get(id); if(!row||row.state!=='completed'||!row.outcome) return failure('COMPLETE_CONFLICT','结果提交冲突，请刷新后重试',409);
-    const reportPayload:ReportPayload={v:1,kind:'report',video:payload.video,outcome:row.outcome,elapsedSeconds:row.outcome==='held'?payload.video.duration:Number(row.failed_at_seconds??0),issuedAt:now,expiresAt:Number(row.result_expires_at??expiresAt),nonce:randomToken(12),resultRef:id,mode:payload.mode}; const reportToken=await issueReport(reportPayload,env.APP_SIGNING_SECRET); return json({outcome:reportPayload.outcome,elapsedSeconds:reportPayload.elapsedSeconds,reportUrl:`${publicOrigin(request)}/report/${encodeURIComponent(reportToken)}`,reportToken,stats:await repo.stats(videoKey(payload.video.bvid,payload.video.cid))});
+    const reportPayload:ReportPayload={v:1,kind:'report',video:payload.video,outcome:row.outcome,elapsedSeconds:row.outcome==='held'?payload.video.duration:Number(row.failed_at_seconds??0),issuedAt:now,expiresAt:Number(row.result_expires_at??expiresAt),nonce:randomToken(12),resultRef:id,mode:payload.mode}; const reportToken=await issueReport(reportPayload,env.APP_SIGNING_SECRET); return json({outcome:reportPayload.outcome,elapsedSeconds:reportPayload.elapsedSeconds,reportUrl:`${publicOrigin(request, config)}/report/${encodeURIComponent(reportToken)}`,reportToken,stats:await repo.stats(videoKey(payload.video.bvid,payload.video.cid))});
   }
   if (url.pathname === '/api/manage/result' && request.method === 'POST') {
     const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); const row=await repo.get(id); const expired=Boolean(row&&(row.state==='completed'?(row.result_expires_at??0)<=now:row.expires_at<=now)); if(expired)await repo.destroy(id);
@@ -299,17 +305,37 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     if (groupToken) {
       const payload = await readGroupInvitation(groupToken, env.APP_SIGNING_SECRET, now);
       const xml = await fetchDanmaku(payload.video.cid, payload.video.bvid, config, env.BILIDIRECT_API_KEY);
-      return new Response(xml, { headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Cache-Control': 'private, max-age=60', 'X-Content-Type-Options': 'nosniff' } });
+      return new Response(xml, { headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Cache-Control': 'private, max-age=60', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' } });
     }
     const token = url.searchParams.get('challenge') || '';
     const payload = await readChallenge(token, env.APP_SIGNING_SECRET, now);
     const xml = await fetchDanmaku(payload.video.cid, payload.video.bvid, config, env.BILIDIRECT_API_KEY);
-    return new Response(xml, { headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Cache-Control': 'private, max-age=60', 'X-Content-Type-Options': 'nosniff' } });
+    return new Response(xml, { headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Cache-Control': 'private, max-age=60', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' } });
   }
   return failure('NOT_FOUND','接口不存在',404);
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) { try { const url=new URL(request.url); if(url.pathname.startsWith('/api/')) return await api(request,env,ctx); return secureAsset(await env.ASSETS.fetch(request)); } catch(error) { if(error instanceof CapabilityError||error instanceof ContractError) return failure(error.code,error.message,error.code.includes('EXPIRED')?410:400); if(error instanceof GroupRepositoryError) return failure(error.code,error.message,400); if(error instanceof UpstreamError) return failure('UPSTREAM_ERROR',error.message,error.status>=500?502:400); if(error instanceof SyntaxError) return failure('INVALID_JSON','请求内容不是有效 JSON'); if(error instanceof Error&&(error.message==='MISSING_AUTHORIZATION'||error.message==='REQUEST_TOO_LARGE')) return failure(error.message,error.message==='MISSING_AUTHORIZATION'?'缺少管理凭证':'请求内容过大',error.message==='MISSING_AUTHORIZATION'?401:413); console.error('worker_request_failed',{name:error instanceof Error?error.name:'unknown'}); return failure('INTERNAL_ERROR','服务暂时不可用',500); } },
-  async scheduled(_controller: ScheduledController, env: Env) { const now = nowSeconds(); const [sessions,groups] = await Promise.all([new SessionRepository(env.DB).cleanup(now), new GroupRepository(env.DB).cleanup(now)]); console.log('expired_sessions_cleaned',{changes:sessions.changes + groups.changes}); },
+  async scheduled(_controller: ScheduledController, env: Env) {
+    const startedAt = Date.now();
+    try {
+      const now = nowSeconds();
+      const [sessions, groups] = await Promise.all([
+        new SessionRepository(env.DB).cleanup(now),
+        new GroupRepository(env.DB).cleanup(now),
+      ]);
+      console.log('expired_records_cleaned', {
+        durationMs: Math.max(0, Date.now() - startedAt),
+        single: { traces: sessions.traceChanges, sessions: sessions.sessionChanges },
+        group: { parents: groups.parentChanges, attempts: groups.attemptChanges, blocks: groups.blockChanges },
+      });
+    } catch (error) {
+      console.error('expired_records_cleanup_failed', {
+        durationMs: Math.max(0, Date.now() - startedAt),
+        name: error instanceof Error ? error.name : 'unknown',
+      });
+      throw error;
+    }
+  },
 } satisfies ExportedHandler<Env>;

@@ -34,7 +34,10 @@ export class SessionRepository {
     const result = await this.db.prepare(`UPDATE challenge_sessions SET state='started',started_at=?,attempt_token_hash=? WHERE challenge_id=? AND state='opened'`).bind(now,attemptHash,id).run();
     return result.meta.changes === 1;
   }
-  async attemptMatches(id: string, hash: string) { return Boolean(await this.db.prepare(`SELECT 1 ok FROM challenge_sessions WHERE challenge_id=? AND state='started' AND attempt_token_hash=?`).bind(id,hash).first()); }
+  // The bearer remains the authorization boundary for both the first
+  // completion and an idempotent retry.  Do not scope this lookup to
+  // `started`: a completed row must still reject a different bearer.
+  async attemptMatches(id: string, hash: string) { return Boolean(await this.db.prepare('SELECT 1 ok FROM challenge_sessions WHERE challenge_id=? AND attempt_token_hash=?').bind(id,hash).first()); }
   async complete(input: { id: string; outcome: Outcome; elapsed: number; now: number; resultExpiresAt: number; bucketSize: number; scoreTrace: ScorePoint[] }) {
     const row = await this.get(input.id); if (!row) return { status: 'missing' as const }; if (row.state === 'completed') return { status: 'existing' as const, row };
     const aggregate = this.db.prepare(`INSERT INTO video_stats(video_key,total,held,failed,cumulative_elapsed_seconds,last_completed_at) SELECT ?,1,?,?,?,? WHERE EXISTS(SELECT 1 FROM challenge_sessions WHERE challenge_id=? AND state='started') ON CONFLICT(video_key) DO UPDATE SET total=total+1,held=held+excluded.held,failed=failed+excluded.failed,cumulative_elapsed_seconds=cumulative_elapsed_seconds+excluded.cumulative_elapsed_seconds,last_completed_at=excluded.last_completed_at`).bind(row.video_key,input.outcome === 'held' ? 1 : 0,input.outcome === 'failed' ? 1 : 0,input.elapsed,input.now,input.id);
@@ -81,6 +84,8 @@ export class SessionRepository {
       this.db.prepare('DELETE FROM challenge_score_traces WHERE expires_at<=?').bind(now),
       this.db.prepare(`DELETE FROM challenge_sessions WHERE (state!='completed' AND expires_at<=?) OR (state='completed' AND result_expires_at<=?)`).bind(now,now),
     ]);
-    return { changes:(results[0]?.meta.changes??0)+(results[1]?.meta.changes??0) };
+    const traceChanges = results[0]?.meta.changes ?? 0;
+    const sessionChanges = results[1]?.meta.changes ?? 0;
+    return { traceChanges, sessionChanges, changes: traceChanges + sessionChanges };
   }
 }

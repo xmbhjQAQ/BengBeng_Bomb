@@ -45,6 +45,13 @@ class FakeD1 {
 
   first(statement: FakeStatement): unknown {
     const query = statement.query;
+    if (query.includes('COUNT(*) AS count') && query.includes('group_id IN (SELECT group_id FROM group_challenges')) {
+      const now = Number(statement.args[0]);
+      const groupIds = new Set([...this.groups.values()]
+        .filter((group) => group.result_expires_at <= now)
+        .map((group) => group.group_id));
+      return { count: [...this.attempts.values()].filter((row) => groupIds.has(row.group_id)).length };
+    }
     if (query.includes('FROM group_challenge_blocks')) {
       const row = this.blocks.get(String(statement.args[0]));
       return row ? { expires_at: row.expires_at } : null;
@@ -376,7 +383,7 @@ describe('GroupRepository', () => {
     expect(ended.status).toBe('ended');
 
     db.attempts.set('old', { ...startedAttempt('old', '旧'), result_expires_at: 300 });
-    expect(await repository.cleanup(300)).toEqual({ changes: 1 });
+    expect(await repository.cleanup(300)).toEqual({ parentChanges: 1, attemptChanges: 1, blockChanges: 0, changes: 2 });
     expect(db.groups.has(groupInput.groupId)).toBe(false);
     expect(db.attempts.has('old')).toBe(false);
     expect(db.stats.has(groupInput.videoKey)).toBe(false);

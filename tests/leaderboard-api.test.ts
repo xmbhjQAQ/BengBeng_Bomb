@@ -18,7 +18,7 @@ class MemoryCache {
   async match(){return this.value?.clone();}
   async put(_request:Request,response:Response){this.value=response.clone();}
 }
-const env=(db:LeaderboardD1):Env=>({DB:db as unknown as D1Database,ASSETS:{} as Fetcher,APP_SIGNING_SECRET:'a'.repeat(32),BILIDIRECT_API_KEY:'',BILIDIRECT_BASE_URL:'https://api.example.com'});
+const env=(db:LeaderboardD1):Env=>({DB:db as unknown as D1Database,ASSETS:{} as Fetcher,APP_SIGNING_SECRET:'a'.repeat(32),BILIDIRECT_API_KEY:'test-api-key',BILIDIRECT_BASE_URL:'https://api.example.com'});
 const context=()=>({waitUntil(promise:Promise<unknown>){void promise;},passThroughOnException(){},props:{}} as unknown as ExecutionContext);
 
 describe('GET /api/leaderboard',()=>{

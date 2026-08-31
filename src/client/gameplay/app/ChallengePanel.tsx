@@ -15,6 +15,7 @@ interface ChallengePanelProps {
   danmakuStatus: 'unavailable' | 'loading' | 'ready' | 'error';
   setPlayerContainer(element: HTMLDivElement | null): void;
   onStart(): void;
+  onRetryVideo?(): void;
 }
 
 const activePhases: ChallengePhase[] = [
@@ -69,6 +70,7 @@ export function ChallengePanel(props: ChallengePanelProps) {
       <DanmakuNotice status={props.danmakuStatus} />
       {props.playerError && <p className="error" role="alert">{props.playerError}</p>}
       <div className="challenge-actions">
+        {props.playerError && props.onRetryVideo && <button type="button" className="secondary" onClick={props.onRetryVideo}>重新加载视频</button>}
         <button type="button" onClick={props.onStart} disabled={!props.canStart}>
           {t.challenge.start}
         </button>

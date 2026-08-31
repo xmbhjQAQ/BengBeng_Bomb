@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest } from './client';
 
 describe('apiRequest', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it('turns an HTML or otherwise non-JSON response into a friendly message', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', { status: 502 })));
@@ -14,6 +14,35 @@ describe('apiRequest', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
 
     await expect(apiRequest('/api/bilibili/parse')).rejects.toThrow('暂时无法连接服务，请检查网络后重试。');
+  });
+
+  it('times out a request and preserves caller cancellation', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+    })));
+    const pending = apiRequest('/api/leaderboard');
+    pending.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(15_001);
+    await expect(pending).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+    vi.useRealTimers();
+
+    const abortController = new AbortController();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+    })));
+    const aborted = apiRequest('/api/leaderboard', { signal: abortController.signal });
+    aborted.catch(() => undefined);
+    abortController.abort();
+    await expect(aborted).rejects.toMatchObject({ code: 'REQUEST_ABORTED' });
+  });
+
+  it('rejects a successful HTTP response that is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    })));
+    await expect(apiRequest('/api/leaderboard')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('hides capability terminology from ordinary pages', async () => {

@@ -9,6 +9,7 @@ import { PublicQrCode } from './PublicQrCode';
 import { GroupParticipantList } from './GroupParticipantList';
 import type { ChallengeDisplayPayload, GroupParticipant } from './groupTypes';
 import { useState } from 'react';
+import { writeSession } from '../storage/session';
 
 interface SettlementResult {
   outcome: 'held' | 'failed';
@@ -59,7 +60,7 @@ export function Settlement({
     }
   };
   const forward = () => {
-    sessionStorage.setItem('forward-video', `https://www.bilibili.com/video/${challenge.video.bvid}`);
+    writeSession('forward-video', `https://www.bilibili.com/video/${challenge.video.bvid}`);
     if (window.location.pathname === '/') return;
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));

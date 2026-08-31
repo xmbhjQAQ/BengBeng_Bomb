@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildParseUrl,
   extractBvid,
@@ -12,6 +12,7 @@ import {
 } from './bilibili';
 
 describe('Bilibili source helpers', () => {
+  afterEach(() => vi.useRealTimers());
   it('accepts supported video links and rejects unsupported share links', () => {
     expect(parseBilibiliInput('https://www.bilibili.com/video/BV1B7411m7LV').bvid)
       .toBe('BV1B7411m7LV');
@@ -95,5 +96,18 @@ describe('Bilibili source helpers', () => {
       'https://cdn.example/backup.mp4',
       'https://cdn.example/backup-2.mp4',
     ]);
+  });
+
+  it('maps a slow parser request to a retryable timeout', async () => {
+    vi.useFakeTimers();
+    const promise = parseVideoByBvid({
+      bvid: 'BV1B7411m7LV',
+      fetchImpl: async (_url, options) => new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      }),
+    });
+    promise.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(15_001);
+    await expect(promise).rejects.toThrow('视频服务响应有点慢，请稍后重试。');
   });
 });

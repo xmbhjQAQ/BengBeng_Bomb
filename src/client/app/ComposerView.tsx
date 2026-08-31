@@ -7,6 +7,7 @@ import { compactLink } from './linkDisplay';
 import { CopyButton } from './CopyButton';
 import { copyText } from './copyText';
 import { normalizeGroupCreated } from './groupTypes';
+import { readSession, removeSession } from '../storage/session';
 
 export interface ParsedVideo {
   video: PlaybackData;
@@ -31,7 +32,7 @@ interface FileShareNavigator {
 }
 
 export function ComposerView({ embedded = false, prefill }: { embedded?: boolean; prefill?: ParsedVideo | null }) {
-  const [input, setInput] = useState(sessionStorage.getItem('forward-video') || '');
+  const [input, setInput] = useState(readSession('forward-video') || '');
   const [parsed, setParsed] = useState<ParsedVideo | null>(prefill ?? null);
   const [created, setCreated] = useState<Created | null>(null);
   const [initiator, setInitiator] = useState('');
@@ -60,7 +61,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
     try {
       setParsed(await post<ParsedVideo>('/api/bilibili/parse', { input: value }));
       setCreated(null);
-      if (clearForward || value === input) sessionStorage.removeItem('forward-video');
+      if (clearForward || value === input) removeSession('forward-video');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '解析失败');
     } finally {
@@ -69,7 +70,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
   }, [input]);
 
   useEffect(() => {
-    const forwarded = sessionStorage.getItem('forward-video');
+    const forwarded = readSession('forward-video');
     if (prefill || !forwarded || autoForwardStarted.current) return;
     autoForwardStarted.current = true;
     void parse(forwarded, true);
@@ -110,7 +111,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
           group: false,
         });
       }
-      sessionStorage.removeItem('forward-video');
+      removeSession('forward-video');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '创建失败');
     } finally {

@@ -1,6 +1,7 @@
 export const DEFAULT_API_BASE_URL = '';
 export const DEFAULT_API_KEY = '';
 export const BVID_PATTERN = /BV[0-9A-Za-z]{10,}/i;
+const VIDEO_REQUEST_TIMEOUT_MS = 15_000;
 
 const SHORT_LINK_HOSTS = new Set([
   'b23.tv',
@@ -269,16 +270,35 @@ export async function parseVideoByBvid(options: {
   };
   if (String(apiKey).trim()) payload.key = String(apiKey).trim();
 
+  const requestController = new AbortController();
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => {
+    timedOut = true;
+    requestController.abort();
+  }, VIDEO_REQUEST_TIMEOUT_MS);
+  const abortFromCaller = () => requestController.abort();
+  if (signal) {
+    if (signal.aborted) requestController.abort();
+    else signal.addEventListener('abort', abortFromCaller, { once: true });
+  }
   let response: Response;
   try {
     response = await fetchImpl(buildParseUrl(apiBaseUrl), {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify(payload),
-      signal,
+      signal: requestController.signal,
     });
-  } catch {
+    if (timedOut) throw new BilibiliApiError('视频服务响应有点慢，请稍后重试。');
+    if (requestController.signal.aborted) throw new BilibiliApiError('请求已取消。');
+  } catch (error) {
+    if (error instanceof BilibiliApiError) throw error;
+    if (timedOut) throw new BilibiliApiError('视频服务响应有点慢，请稍后重试。');
+    if (signal?.aborted) throw new BilibiliApiError('请求已取消。');
     throw new BilibiliApiError('暂时无法连接视频服务，请检查网络后重试。');
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromCaller);
   }
 
   let body: { ok?: boolean; message?: string; code?: number; data?: unknown };

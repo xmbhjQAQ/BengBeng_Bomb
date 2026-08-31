@@ -25,6 +25,9 @@ const friendlyMessages: Record<string, string> = {
   NOT_FOUND: '页面不存在或已失效。',
   INVALID_JSON: '请求内容有误，请稍后重试。',
   INTERNAL_ERROR: '服务暂时不可用，请稍后重试。',
+  REQUEST_TIMEOUT: '服务响应有点慢，请稍后重试。',
+  REQUEST_ABORTED: '请求已取消。',
+  RATE_LIMITED: '操作太频繁了，请稍等一会儿再试。',
 };
 
 function userMessage(code: string, message: string, path: string): string {
@@ -42,11 +45,32 @@ function userMessage(code: string, message: string, path: string): string {
 }
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const callerSignal = options.signal;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 15_000);
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+  }
   let response: Response;
   try {
-    response = await fetch(path, { ...options, headers: { Accept: 'application/json', ...(options.body ? {'Content-Type':'application/json'}:{}), ...options.headers } });
+    response = await fetch(path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.body ? {'Content-Type':'application/json'}:{}), ...options.headers } });
   } catch {
+    if (timedOut) throw new ApiClientError('REQUEST_TIMEOUT', friendlyMessages.REQUEST_TIMEOUT!);
+    if (callerSignal?.aborted) throw new ApiClientError('REQUEST_ABORTED', friendlyMessages.REQUEST_ABORTED!);
     throw new ApiClientError('NETWORK_ERROR', '暂时无法连接服务，请检查网络后重试。');
+  } finally {
+    globalThis.clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
+  }
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (contentType && !contentType.includes('json')) {
+    throw new ApiClientError('INVALID_RESPONSE', '服务暂时无法响应，请稍后重试。');
   }
   let envelope: ApiEnvelope<T>;
   try {

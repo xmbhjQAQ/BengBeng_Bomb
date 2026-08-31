@@ -9,6 +9,7 @@ import { invalidReasonText } from '../gameplay/app/viewText';
 import { Settlement } from './Settlement';
 import { RECIPIENT_STEPS, recipientStage, type RecipientStage } from './recipientFlow';
 import { normalizeGroupComplete, normalizeGroupOpen, type ChallengeDisplayPayload, type GroupCompleted } from './groupTypes';
+import { readSession, removeSession, writeSession } from '../storage/session';
 
 interface Opened {
   challenge: ChallengeDisplayPayload;
@@ -39,7 +40,7 @@ const finiteNumber = (value: unknown): value is number => typeof value === 'numb
 
 function readCachedCompleted(token: string, durationSeconds: number): Completed | null {
   const key = completedKey(token);
-  const raw = sessionStorage.getItem(key);
+  const raw = readSession(key);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as unknown;
@@ -66,18 +67,18 @@ function readCachedCompleted(token: string, durationSeconds: number): Completed 
       scoreTrace,
     };
   } catch {
-    sessionStorage.removeItem(key);
+    removeSession(key);
     return null;
   }
 }
 
-const clearCachedCompleted = (token: string) => sessionStorage.removeItem(completedKey(token));
+const clearCachedCompleted = (token: string) => removeSession(completedKey(token));
 
 export function ChallengeView({ token, group = false }: { token: string; group?: boolean }) {
   const demo = useSmileDemo();
   const [opened, setOpened] = useState<Opened | null>(null);
-  const [attempt, setAttempt] = useState(() => sessionStorage.getItem(attemptKey(token, group)) || '');
-  const [groupAttemptId, setGroupAttemptId] = useState(() => group ? sessionStorage.getItem(groupAttemptIdKey(token)) || '' : '');
+  const [attempt, setAttempt] = useState(() => readSession(attemptKey(token, group)) || '');
+  const [groupAttemptId, setGroupAttemptId] = useState(() => group ? readSession(groupAttemptIdKey(token)) || '' : '');
   const [completed, setCompleted] = useState<Completed | null>(null);
   const [openError, setOpenError] = useState('');
   const [startError, setStartError] = useState('');
@@ -130,12 +131,12 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
       const value: Completed = group
         ? (() => { const result = normalizeGroupComplete(raw); return { ...result, resultUrl: result.resultUrl || undefined, groupParticipants: result.participants, groupNextCursor: result.nextCursor, groupTotal: result.total, scoreTrace: localResult.scoreTrace }; })()
         : { ...(raw as Completed), scoreTrace: localResult.scoreTrace };
-      sessionStorage.removeItem(attemptKey(token, group));
-      if (group) sessionStorage.removeItem(groupAttemptIdKey(token));
+      removeSession(attemptKey(token, group));
+      if (group) removeSession(groupAttemptIdKey(token));
       const completedValue = value;
       setCompleted(completedValue);
       if (!group) {
-        try { sessionStorage.setItem(completedKey(token), JSON.stringify(completedValue)); } catch { /* private storage can be unavailable */ }
+        writeSession(completedKey(token), JSON.stringify(completedValue));
       }
       setSubmission({ status: 'idle', error: '' });
       void document.exitFullscreen?.().catch(() => undefined);
@@ -168,10 +169,10 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
           ? { groupToken: token, nickname: nickname.trim() }
           : { challengeToken: token });
         currentAttempt = value.attemptToken;
-        sessionStorage.setItem(attemptKey(token, group), currentAttempt);
+        writeSession(attemptKey(token, group), currentAttempt);
         setAttempt(currentAttempt);
         if (group && value.attemptId) {
-          sessionStorage.setItem(groupAttemptIdKey(token), value.attemptId);
+          writeSession(groupAttemptIdKey(token), value.attemptId);
           setGroupAttemptId(value.attemptId);
         }
       }
@@ -230,6 +231,7 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
       danmakuStatus={demo.danmakuStatus}
       setPlayerContainer={demo.setPlayerContainer}
       onStart={() => void start()}
+      onRetryVideo={demo.retryVideo}
     />
   );
 
@@ -253,7 +255,9 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
               <li>挑战结束后只会提交结果、坚持时间和简化后的表情变化。</li>
               <li>这份结果和表情变化会在有效期结束或被删除后一起移除。</li>
               <li>不会上传摄像头照片或可识别你的面部信息。</li>
-              <li>匿名结果会帮助大家了解这段视频的难度；删除私密结果不会影响统计。</li>
+              {group
+                ? <li>群组结果会显示你填写的昵称、是否绷住和坚持时间；拿到群组结果链接的人都能看到。</li>
+                : <li>匿名结果会帮助大家了解这段视频的难度；删除私密结果不会影响统计。</li>}
             </ul>
             <button type="button" onClick={() => { setAccepted(true); demo.openCamera(); }}>
               我知道了，接受挑战
