@@ -9,7 +9,7 @@
 ```powershell
 npm install
 Copy-Item .dev.vars.example .dev.vars
-npx wrangler d1 migrations apply bengbeng-bomb-db --local
+npx wrangler d1 migrations apply bengbeng_bomb --local
 npm run seed:leaderboard # 可选：填充本地排行榜测试数据
 npm run build
 npx wrangler dev
@@ -46,7 +46,7 @@ npx wrangler dev
 
 1. 为 staging/production 分别创建 Worker、D1 和（可选但建议）三类 Rate Limiting namespace；不要复用本地 D1。
 2. 把目标环境的实际 `database_id`、`PUBLIC_ORIGIN` 和 Rate Limiting binding 写入对应 Wrangler 环境，并运行 `npm run release:preflight -- --env <staging|production>`。
-3. 执行 `npx wrangler d1 migrations apply bengbeng-bomb-db --remote --env <target>`。
+3. 执行 `npx wrangler d1 migrations apply bengbeng_bomb --remote --env <target>`。
 4. 用 `npx wrangler secret put APP_SIGNING_SECRET --env <target>` 和 `npx wrangler secret put BILIDIRECT_API_KEY --env <target>` 配置 Secret。
 5. 执行 `npm run check` 和 `npx wrangler deploy --dry-run --env <target>`；部署、真机验收和生产发布需要单独确认。
 
