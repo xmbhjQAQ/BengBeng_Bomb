@@ -22,6 +22,6 @@
   // Define `env.staging` and `env.production` locally for deployment with
   // real D1 IDs, PUBLIC_ORIGIN, and RATE_LIMITER_* bindings. They are kept
   // out of this shared local profile so placeholder resources cannot deploy.
-  "d1_databases": [{ "binding": "DB", "database_name": "bengbeng-bomb-db", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "bengbeng-bomb-db", "database_id": "ac62916d-399c-405e-acd9-7694b61171f6", "migrations_dir": "migrations" }],
   "triggers": { "crons": ["17 * * * *"] }
 }
