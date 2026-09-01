@@ -37,6 +37,7 @@ npx wrangler dev
 - `PUBLIC_ORIGIN`：公开挑战、结果和战报链接使用的 HTTPS 根地址；部署环境应显式设置
 - `APP_ENV`：部署环境标识；`staging`/`production` 会强制要求 `PUBLIC_ORIGIN`
 - `BILIDIRECT_TIMEOUT_MS`：解析/弹幕上游超时，默认 `8000`，范围 `1000–20000`
+- `BILIDIRECT_MAX_RETRIES`：解析/弹幕上游遇到短暂网络抖动时的自动重试次数，默认 `3`，范围 `0–5`；`0` 表示关闭重试，所有重试共享同一个总超时预算，不采用上游的长等待提示
 - `BILIDIRECT_JSON_MAX_BYTES`：解析上游 JSON 大小上限，默认 `524288`
 - `BILIDIRECT_TEXT_MAX_BYTES`：弹幕上游文本大小上限，默认 `4194304`
 

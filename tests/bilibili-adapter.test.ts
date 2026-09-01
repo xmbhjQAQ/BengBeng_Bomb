@@ -5,6 +5,91 @@ import type { WorkerConfig } from '../src/worker/config';
 const config:WorkerConfig={challengeTtlSeconds:172800,resultTtlSeconds:172800,ticketTtlSeconds:900,baseUrl:'https://parser.example.com',qn:80,leaderboardMinAttempts:5,leaderboardCacheSeconds:600,leaderboardLimit:20};
 describe('bilidirect Worker adapter',()=>{it('keeps the API key server-side and returns sanitized CDN candidates',async()=>{const fetchImpl=vi.fn(async(_input:RequestInfo|URL,init?:RequestInit)=>{expect(new Headers(init?.headers).get('X-API-Key')).toBe('server-only-key');return new Response(JSON.stringify({ok:true,data:{bvid:'BV1B7411m7LV',cid:123,page:1,title:'测试',description:'简介',cover:'http://i.example/cover.jpg',duration:60,directUrl:'http://cdn.example/video.mp4',playback:{durl:[{url:'https://cdn.example/fallback.mp4'}]}}}),{status:200,headers:{'Content-Type':'application/json'}});});const result=await resolveBilibili('BV1B7411m7LV',1,config,'server-only-key',fetchImpl as typeof fetch);expect(result.media).toEqual(['https://cdn.example/video.mp4','https://cdn.example/fallback.mp4']);expect(result.cover).toBe('https://i.example/cover.jpg');expect(JSON.stringify(result)).not.toContain('server-only-key');expect(fetchImpl).toHaveBeenCalledTimes(1);});});
 describe('upstream boundaries',()=>{
+  const parseSuccess = () => new Response(JSON.stringify({ok:true,data:{bvid:'BV1B7411m7LV',cid:123,page:1,title:'测试',description:'简介',duration:60,directUrl:'https://cdn.example/video.mp4'}}),{status:200,headers:{'Content-Type':'application/json'}});
+  it.each([502,503,504])('retries a transient upstream %s response',async(status)=>{
+    let calls=0;
+    const fetchImpl=vi.fn(async()=>{calls+=1;return calls===1?new Response('origin unavailable',{status,headers:{'Retry-After':'60'}}):parseSuccess();});
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch,sleepImpl)).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).toHaveBeenCalledTimes(1);
+    expect(sleepImpl).toHaveBeenCalledWith(150);
+  });
+  it('retries a transient transport failure without using the upstream retry-after delay',async()=>{
+    let calls=0;
+    const fetchImpl=vi.fn(async()=>{calls+=1;if(calls===1)throw new TypeError('fetch failed');return parseSuccess();});
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch,sleepImpl)).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleepImpl).toHaveBeenCalledWith(150);
+  });
+  it('does not retry client or authentication errors',async()=>{
+    const fetchImpl=vi.fn(async()=>new Response('unauthorized',{status:401}));
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch,sleepImpl)).rejects.toMatchObject({status:401});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleepImpl).not.toHaveBeenCalled();
+  });
+  it('uses the default retry count when the legacy config shape omits it',async()=>{
+    let calls=0;
+    const fetchImpl=vi.fn(async()=>{calls+=1;return calls<=3?new Response('origin unavailable',{status:503}):parseSuccess();});
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch,sleepImpl)).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleepImpl).toHaveBeenCalledTimes(3);
+  });
+  it('uses a configured retry count and allows retries to be disabled',async()=>{
+    let calls=0;
+    const fetchImpl=vi.fn(async()=>{calls+=1;return calls<=3?new Response('origin unavailable',{status:502}):parseSuccess();});
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,{...config,upstreamMaxRetries:3},'key',fetchImpl as typeof fetch,sleepImpl)).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleepImpl).toHaveBeenCalledTimes(3);
+
+    calls=0;
+    fetchImpl.mockClear();
+    sleepImpl.mockClear();
+    await expect(resolveBilibili('BV1B7411m7LV',1,{...config,upstreamMaxRetries:0},'key',fetchImpl as typeof fetch,sleepImpl)).rejects.toMatchObject({status:502});
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleepImpl).not.toHaveBeenCalled();
+  });
+  it('clamps direct adapter retry values to the Free-account safety cap',async()=>{
+    let calls=0;
+    const fetchImpl=vi.fn(async()=>{calls+=1;return calls<=5?new Response('origin unavailable',{status:504}):parseSuccess();});
+    const sleepImpl=vi.fn(async()=>{});
+    await expect(resolveBilibili('BV1B7411m7LV',1,{...config,upstreamMaxRetries:99},'key',fetchImpl as typeof fetch,sleepImpl)).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(sleepImpl).toHaveBeenCalledTimes(5);
+  });
+  it('releases the final failed response body',async()=>{
+    let canceled=0;
+    const fetchImpl=vi.fn(async()=>new Response(new ReadableStream({cancel(){canceled+=1;}}),{status:401}));
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch)).rejects.toMatchObject({status:401});
+    expect(canceled).toBe(1);
+  });
+  it('releases a discarded retry response body',async()=>{
+    let calls=0;
+    let canceled=0;
+    const fetchImpl=vi.fn(async()=>{
+      calls+=1;
+      if(calls===1)return new Response(new ReadableStream({cancel(){canceled+=1;}}),{status:502});
+      return parseSuccess();
+    });
+    await expect(resolveBilibili('BV1B7411m7LV',1,config,'key',fetchImpl as typeof fetch,async()=>{})).resolves.toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(canceled).toBe(1);
+  });
+  it('keeps the configured total timeout bounded across retries',async()=>{
+    let calls=0;
+    const fetchImpl=vi.fn((_input:RequestInfo|URL,init?:RequestInit)=>{
+      calls+=1;
+      if(calls===1)return Promise.reject(new TypeError('fetch failed'));
+      return new Promise<Response>((_resolve,reject)=>{init?.signal?.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});});
+    });
+    const startedAt=Date.now();
+    await expect(resolveBilibili('BV1B7411m7LV',1,{...config,upstreamTimeoutMs:320},'key',fetchImpl as typeof fetch,async()=>{})).rejects.toMatchObject({status:504});
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(Date.now()-startedAt).toBeLessThan(550);
+  });
   it('maps an aborted upstream request to a timeout',async()=>{
     const fetchImpl=vi.fn((_input:RequestInfo|URL,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
       init?.signal?.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});

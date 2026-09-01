@@ -17,6 +17,7 @@
     "LEADERBOARD_CACHE_SECONDS": "600",
     "LEADERBOARD_LIMIT": "20",
     "BILIDIRECT_BASE_URL": "https://bilidirect.nagisa.icu",
+    "BILIDIRECT_MAX_RETRIES": "3",
     "BILIBILI_QN": "80"
   },
   // The default profile is bound to the current production D1. Define

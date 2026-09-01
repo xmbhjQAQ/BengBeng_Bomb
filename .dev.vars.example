@@ -3,5 +3,6 @@ BILIDIRECT_API_KEY=replace-with-your-server-api-key
 # Optional local tuning; production values belong to the selected Wrangler environment.
 # PUBLIC_ORIGIN=https://your-domain.example
 # BILIDIRECT_TIMEOUT_MS=8000
+# BILIDIRECT_MAX_RETRIES=3
 # BILIDIRECT_JSON_MAX_BYTES=524288
 # BILIDIRECT_TEXT_MAX_BYTES=4194304

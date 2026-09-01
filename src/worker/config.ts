@@ -14,13 +14,14 @@ export interface Env {
   LEADERBOARD_CACHE_SECONDS?: string;
   LEADERBOARD_LIMIT?: string;
   BILIDIRECT_TIMEOUT_MS?: string;
+  BILIDIRECT_MAX_RETRIES?: string;
   BILIDIRECT_JSON_MAX_BYTES?: string;
   BILIDIRECT_TEXT_MAX_BYTES?: string;
   RATE_LIMITER_EXPENSIVE?: RateLimit;
   RATE_LIMITER_MUTATION?: RateLimit;
   RATE_LIMITER_PUBLIC?: RateLimit;
 }
-export interface WorkerConfig { challengeTtlSeconds: number; resultTtlSeconds: number; ticketTtlSeconds: number; baseUrl: string; publicOrigin?: string; qn: number; leaderboardMinAttempts: number; leaderboardCacheSeconds: number; leaderboardLimit: number; upstreamTimeoutMs?: number; upstreamJsonMaxBytes?: number; upstreamTextMaxBytes?: number }
+export interface WorkerConfig { challengeTtlSeconds: number; resultTtlSeconds: number; ticketTtlSeconds: number; baseUrl: string; publicOrigin?: string; qn: number; leaderboardMinAttempts: number; leaderboardCacheSeconds: number; leaderboardLimit: number; upstreamTimeoutMs?: number; upstreamMaxRetries?: number; upstreamJsonMaxBytes?: number; upstreamTextMaxBytes?: number }
 const bounded = (value: string | undefined, fallback: number, min: number, max: number) => { const parsed = Number(value); return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback; };
 export function readConfig(env: Env): WorkerConfig {
   if (!env.APP_SIGNING_SECRET || env.APP_SIGNING_SECRET.length < 32) throw new Error('APP_SIGNING_SECRET must contain at least 32 characters');
@@ -48,6 +49,8 @@ export function readConfig(env: Env): WorkerConfig {
     leaderboardCacheSeconds: Math.round(bounded(env.LEADERBOARD_CACHE_SECONDS, 600, 30, 86_400)),
     leaderboardLimit: Math.round(bounded(env.LEADERBOARD_LIMIT, 20, 1, 100)),
     upstreamTimeoutMs: Math.round(bounded(env.BILIDIRECT_TIMEOUT_MS, 8_000, 1_000, 20_000)),
+    // Keep retries bounded so a transient tunnel failure cannot fan out into unbounded subrequests.
+    upstreamMaxRetries: Math.round(bounded(env.BILIDIRECT_MAX_RETRIES, 3, 0, 5)),
     upstreamJsonMaxBytes: Math.round(bounded(env.BILIDIRECT_JSON_MAX_BYTES, 512 * 1024, 16 * 1024, 2 * 1024 * 1024)),
     upstreamTextMaxBytes: Math.round(bounded(env.BILIDIRECT_TEXT_MAX_BYTES, 4 * 1024 * 1024, 64 * 1024, 8 * 1024 * 1024)),
   };
