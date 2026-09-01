@@ -2,7 +2,10 @@ import type { ApiEnvelope } from '../../shared/contracts';
 
 const baseSecurityHeaders: Record<string, string> = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()' };
 const securityHeaders: Record<string, string> = { ...baseSecurityHeaders, 'Cache-Control': 'no-store' };
-const contentSecurityPolicy = ["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","script-src 'self' 'wasm-unsafe-eval'","style-src 'self' 'unsafe-inline'","img-src 'self' https: data: blob:","media-src https: blob:","connect-src 'self' https:"].join('; ');
+// The hash covers the unchanged Clarity bootstrap in index.html. Keeping a
+// hash instead of enabling unsafe-inline preserves CSP protection for other
+// inline scripts while the host allowlist covers Clarity and Pages Insights.
+const contentSecurityPolicy = ["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","script-src 'self' 'wasm-unsafe-eval' 'sha256-93xNr/MlEvYlP8zOTmO8OBWTETRYkVg3e0itq85nxGQ=' https://www.clarity.ms https://scripts.clarity.ms https://static.cloudflareinsights.com","style-src 'self' 'unsafe-inline'","img-src 'self' https: data: blob:","media-src https: blob:","connect-src 'self' https:"].join('; ');
 export function json<T>(data: T, status = 200) { return new Response(JSON.stringify({ ok: true, data } satisfies ApiEnvelope<T>), { status, headers: { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8' } }); }
 export function publicJson<T>(data: T, maximumAgeSeconds: number) { return new Response(JSON.stringify({ ok: true, data } satisfies ApiEnvelope<T>), { headers: { ...baseSecurityHeaders, 'Cache-Control': `public, max-age=${maximumAgeSeconds}`, 'Content-Type': 'application/json; charset=utf-8' } }); }
 export function failure(code: string, message: string, status = 400) { return new Response(JSON.stringify({ ok: false, error: { code, message } } satisfies ApiEnvelope<never>), { status, headers: { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8' } }); }

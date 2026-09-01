@@ -27,3 +27,9 @@
 - No server/API changes and no new persistence.
 - The UA is only used locally to choose copy; it is not sent to the Worker or analytics code.
 - Native share remains image-only, preserving the existing public-link and private-token boundaries.
+
+## Static security-header integration
+
+- Keep the official Clarity snippet in `index.html`; authorize its exact inline bytes with a CSP SHA-256 source instead of enabling `unsafe-inline`.
+- Add only `https://www.clarity.ms`, `https://scripts.clarity.ms`, and `https://static.cloudflareinsights.com` to `script-src`. Existing `https:` image/connect allowances already cover Clarity collection endpoints.
+- Test the generated header through `secureAsset` so the Pages-injected Insights beacon and the Clarity bootstrap are both covered without changing application behavior.

@@ -11,6 +11,7 @@
 - `ComposerView` 的“系统分享图片”会预先生成 PNG `File`，再要求 `navigator.canShare({ files })` 为真后调用 `navigator.share({ title, files })`；不支持或失败时自动复制分享文案并显示手动复制按钮。
 - 桌面 Edge 通常没有可调用的 Web Share 系统面板；移动浏览器对文件分享、用户激活和 `canShare` 的支持也可能不一致。`navigator.share()` 必须由用户激活触发，`canShare()` 只代表当前数据形态是否可分享（MDN Web Share API）。
 - 现有产品约束是图片优先分享，系统分享数据不得携带挑战/结果 URL；不支持图片分享时需要提供复制分享文案兜底。
+- 静态页面由 Worker 的 `secureAsset` 统一附加 CSP；Clarity 初始化脚本和 Cloudflare Pages Web Analytics 需要在这份策略中显式放行，否则浏览器会在发起请求前拦截。
 
 ## Requirements
 
@@ -39,6 +40,13 @@
 - 现有“下载分享图”继续作为最终可用路径；任何降级都不得抛出未处理异常或导致页面导航。
 - 分享按钮在生成图片期间保持禁用；重复点击不能并发触发多个系统分享或重复生成。
 
+### R3. 统计脚本 CSP 兼容
+
+- 保留现有 CSP 的收紧目标，不使用全局 `script-src 'unsafe-inline'`。
+- 通过 Clarity 初始化内联脚本的固定 CSP 哈希允许该脚本执行，并放行 Clarity 官方脚本域名。
+- 放行 Cloudflare Pages 自动注入的 `static.cloudflareinsights.com` beacon 脚本，使 Cloudflare Web Analytics 正常工作。
+- 不改变摄像头、媒体、API、Worker 或页面路由行为；Clarity/Insights 请求失败时网站核心功能仍可用。
+
 ## Out of scope
 
 - 不改变服务端 API、挑战/结果数据结构、二维码内容或链接有效期。
@@ -57,6 +65,7 @@
 - [x] 用户取消系统分享不会触发复制；其他失败会显示图片复制成功或分享文案复制成功，并显示手动“复制分享文案”控件。
 - [x] 剪贴板 API 不可用或拒绝时，页面仍保留下载分享图与手动复制入口，且显示明确失败反馈。
 - [x] 新增 UA、分享能力和组件交互测试；前端 lint、类型检查、全量测试和生产构建通过。
+- [x] 静态资源 CSP 允许 Clarity 初始化哈希、Clarity 脚本域名和 Cloudflare Insights 脚本域名，且 `script-src` 未放宽为 `unsafe-inline`。
 
 ## Decisions
 

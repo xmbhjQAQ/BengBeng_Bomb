@@ -2,4 +2,5 @@
 {"file": ".trellis/spec/frontend/index.md", "reason": "Frontend quality-check entry point"}
 {"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Validate SPA and image-share privacy contracts"}
 {"file": ".trellis/spec/frontend/in-app-browser-guidelines.md", "reason": "Check route-scoped browser blocking and share fallback contracts"}
+{"file": ".trellis/spec/backend/static-security-guidelines.md", "reason": "Check CSP allowlist and analytics failure isolation"}
 {"file": ".trellis/tasks/09-01-in-app-browser-share-fallback/research/web-share-api.md", "reason": "Validate browser API fallback assumptions"}
