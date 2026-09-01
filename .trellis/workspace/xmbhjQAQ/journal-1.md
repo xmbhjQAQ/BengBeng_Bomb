@@ -48,3 +48,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 接入 bilidirect B站短链接解析
+
+**Date**: 2026-09-01
+**Task**: 接入 bilidirect B站短链接解析
+**Branch**: `master`
+
+### Summary
+
+接入 bilidirect main 的 b23.tv 短链接解析；标准 B站页面/BV 保持 bvid 请求兼容；Worker 与直接播放器统一 allowlist，拒绝外部/QQ/其他短链和非 HTTP(S)，严格校验响应 BV 并脱敏 source；更新用户提示、README、测试和任务文档。已通过 lint、type-check、Worker 77 项测试、全量 218 项测试、生产构建、Wrangler dry-run 与发布预检。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a514769` | (see git log) |
+| `4e2ef2c` | (see git log) |
+
+### Status
+
+[OK] **Completed**

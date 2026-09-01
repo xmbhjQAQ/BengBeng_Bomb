@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
-- **Last Active**: 2026-08-31
+- **Total Sessions**: 3
+- **Last Active**: 2026-09-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~50 | Active |
+| `journal-1.md` | ~72 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-09-01 | 接入 bilidirect B站短链接解析 | `a514769`, `4e2ef2c` | `master` |
 | 2 | 2026-08-31 | 普通用户文案与首页背景收口 | `7c48f61` | `master` |
 | 1 | 2026-08-30 | 完成绷绷炸弹 MVP | `9a7e87f`, `a7e0608` | `master` |
 <!-- @@@/auto:session-history -->
