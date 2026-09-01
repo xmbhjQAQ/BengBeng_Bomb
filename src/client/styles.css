@@ -294,6 +294,7 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 .app-view > .page { min-height:calc(100vh - 5.25rem); min-height:calc(100dvh - 5.25rem); }
 .site-footer { width:min(100% - 2rem,1080px); margin:0 auto; padding:0 0 2.25rem; color:#8a7889; font-size:.84rem; text-align:center; }
 .site-footer p { margin:0; }
+.site-footer p + p { margin-top:.35rem; }
 .site-footer a { color:#a22a54; font-weight:750; text-underline-offset:.18em; transition:color .15s ease; }
 .site-footer a:hover { color:#d92f5b; }
 .site-footer a:focus-visible { outline:3px solid rgba(216,47,91,.3); outline-offset:3px; border-radius:3px; }

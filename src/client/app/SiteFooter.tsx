@@ -11,6 +11,7 @@ export function SiteFooter() {
           Github
         </a>
       </p>
+      <p className="site-footer-analytics">本站使用匿名统计技术以提升用户体验</p>
     </footer>
   );
 }

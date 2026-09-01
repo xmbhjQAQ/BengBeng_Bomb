@@ -13,5 +13,6 @@ describe('SiteFooter', () => {
     expect(screen.getByRole('link', { name: 'Github' })).toHaveAttribute('href', 'https://github.com/xmbhjQAQ?tab=repositories');
     expect(screen.getByRole('link', { name: 'Github' })).toHaveAttribute('target', '_blank');
     expect(screen.getByRole('link', { name: 'Github' })).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByText('本站使用匿名统计技术以提升用户体验')).toBeVisible();
   });
 });
