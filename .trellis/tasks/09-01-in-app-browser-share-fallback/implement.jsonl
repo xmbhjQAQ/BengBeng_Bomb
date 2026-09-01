@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend package entry point and quality-check routing"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Existing SPA, sharing, copy and user-facing browser guidance contracts"}
+{"file": ".trellis/spec/frontend/in-app-browser-guidelines.md", "reason": "Implement route-scoped QQ/WeChat blocking and image-share fallbacks"}
+{"file": ".trellis/tasks/09-01-in-app-browser-share-fallback/research/web-share-api.md", "reason": "Web Share API capability and fallback research"}

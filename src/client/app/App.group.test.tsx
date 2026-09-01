@@ -19,16 +19,19 @@ describe('group SPA routes', () => {
     history.replaceState({}, '', '/g/bg1.invitation-token');
     render(<App />);
     expect(screen.getByText('group:bg1.invitation-token')).toBeVisible();
+    expect(screen.queryByRole('link', { name: '回到首页' })).not.toBeInTheDocument();
 
     history.replaceState({}, '', '/g/results/bgr1.result-token');
     fireEvent.popState(window);
     expect(screen.getByText('results:bgr1.result-token')).toBeVisible();
+    expect(screen.getByRole('link', { name: '回到首页' })).toBeVisible();
   });
 
   it('projects the universal group entry URL without a document reload', () => {
     history.replaceState({}, '', '/g/entry/bge1.entry-token');
     render(<App />);
     expect(screen.getByText('entry:bge1.entry-token')).toBeVisible();
+    expect(screen.getByRole('link', { name: '回到首页' })).toBeVisible();
   });
 
   it('does not confuse single challenge or management paths with group routes', () => {

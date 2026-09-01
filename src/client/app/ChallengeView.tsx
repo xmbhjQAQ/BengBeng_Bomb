@@ -362,5 +362,5 @@ function VideoIntro({ video }: { video: ChallengeDisplayPayload['video'] }) {
 }
 
 function Message({ title, detail }: { title: string; detail: string }) {
-  return <main className="page"><section className="section"><h1>{title}</h1><p>{detail}</p><a href="/">返回首页</a></section></main>;
+  return <main className="page"><section className="section"><h1>{title}</h1><p>{detail}</p></section></main>;
 }

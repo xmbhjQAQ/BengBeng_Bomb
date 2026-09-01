@@ -16,6 +16,6 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.failed) return this.props.children;
-    return <main className="page"><section className="section"><h1>页面暂时无法显示</h1><p>刚才的页面遇到了一点问题。可以重试，或回到首页重新开始。</p><div className="button-row"><button type="button" onClick={() => this.setState({ failed: false })}>重试</button><a className="button-link" href="/">返回首页</a></div></section></main>;
+    return <main className="page"><section className="section"><h1>页面暂时无法显示</h1><p>刚才的页面遇到了一点问题。可以重试，或回到首页重新开始。</p><div className="button-row"><button type="button" onClick={() => this.setState({ failed: false })}>重试</button><a className="button-link" href="/">回到首页</a></div></section></main>;
   }
 }

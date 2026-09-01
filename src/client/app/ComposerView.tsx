@@ -6,6 +6,7 @@ import type { PlaybackData, VideoMetadata } from '../../shared/contracts';
 import { compactLink } from './linkDisplay';
 import { CopyButton } from './CopyButton';
 import { copyText } from './copyText';
+import { shareImageFile } from './shareImage';
 import { normalizeGroupCreated } from './groupTypes';
 import { readSession, removeSession } from '../storage/session';
 
@@ -25,11 +26,6 @@ interface Created {
 }
 
 type ShareImageStatus = 'idle' | 'generating' | 'ready' | 'error';
-
-interface FileShareNavigator {
-  canShare?: (data: { files: File[] }) => boolean;
-  share?: (data: { title: string; files: File[] }) => Promise<void>;
-}
 
 export function ComposerView({ embedded = false, prefill }: { embedded?: boolean; prefill?: ParsedVideo | null }) {
   const [input, setInput] = useState(readSession('forward-video') || '');
@@ -193,32 +189,20 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
       return;
     }
 
-    const shareNavigator = navigator as Navigator & FileShareNavigator;
-    const files = [shareFile];
-    const nativeShare = shareNavigator.share;
-    const canShare = shareNavigator.canShare;
-    let supported: boolean;
-    try {
-      supported = typeof nativeShare === 'function'
-        && typeof canShare === 'function'
-        && canShare({ files });
-    } catch {
-      supported = false;
-    }
-    if (!supported) {
-      await copyShareFallback();
-      return;
-    }
-
-    try {
-      await nativeShare!({ title: '绷绷炸弹', files });
+    const result = await shareImageFile(shareFile, shareCopy);
+    if (result.status === 'shared') {
       setShareFeedback('分享图已送出。');
-    } catch (reason) {
-      if (reason instanceof Error && reason.name === 'AbortError') {
-        setShareFeedback('已取消系统分享。');
-        return;
-      }
-      await copyShareFallback();
+    } else if (result.status === 'cancelled') {
+      setShareFeedback('已取消系统分享。');
+    } else if (result.status === 'image-copied') {
+      setShowShareCopy(true);
+      setShareFeedback('图片已复制，可粘贴到聊天窗口；也可以复制分享文案。');
+    } else if (result.status === 'text-copied') {
+      setShowShareCopy(true);
+      setShareFeedback('当前浏览器不支持图片分享，分享文案已复制。');
+    } else {
+      setShowShareCopy(true);
+      setShareFeedback('当前浏览器不支持图片分享，请点击“复制分享文案”或下载分享图。');
     }
   };
 

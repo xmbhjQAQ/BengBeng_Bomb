@@ -300,3 +300,18 @@ button.danger { display: block; margin-top: 1rem; border-color: #a21d3d; backgro
 .site-footer a:focus-visible { outline:3px solid rgba(216,47,91,.3); outline-offset:3px; border-radius:3px; }
 .site-footer-separator { color:#c3aebe; }
 @media (max-width:700px) { .site-footer { width:min(100% - 1rem,1080px); padding-bottom:1.5rem; } }
+
+/* Shared page navigation and embedded-browser recovery */
+.home-navigation { width:min(100% - 2rem,1080px); margin:0 auto; padding-top:1.25rem; }
+.home-navigation a { display:inline-flex; align-items:center; gap:.35rem; padding:.55rem .85rem; border:1px solid #d7c5d4; border-radius:999px; color:#624c60; background:rgba(255,255,255,.82); font-size:.9rem; font-weight:800; text-decoration:none; box-shadow:0 8px 22px rgba(85,42,74,.07); }
+.home-navigation a::before { content:'←'; font-size:1.05rem; line-height:1; }
+.home-navigation a:hover { border-color:#dc3d62; color:#a22a54; }
+.home-navigation a:focus-visible { outline:3px solid rgba(216,47,91,.3); outline-offset:3px; }
+.in-app-browser-mask { position:fixed; z-index:3000; inset:0; display:grid; place-items:center; padding:1.25rem; background:rgba(31,20,37,.78); backdrop-filter:blur(10px); overscroll-behavior:contain; }
+.in-app-browser-dialog { width:min(100%,520px); padding:clamp(1.5rem,6vw,2.5rem); border:1px solid rgba(255,255,255,.72); border-radius:24px; color:#2a202c; background:#fffafd; box-shadow:0 24px 80px rgba(16,9,22,.45); text-align:center; }
+.in-app-browser-dialog:focus { outline:3px solid rgba(255,255,255,.9); outline-offset:4px; }
+.in-app-browser-kicker { margin:0 0 .55rem; color:#d92f5b; font-size:.78rem; font-weight:900; letter-spacing:.14em; }
+.in-app-browser-dialog h2 { margin:0; color:#251b2b; font-size:clamp(1.45rem,5vw,2rem); }
+.in-app-browser-dialog p:not(.in-app-browser-kicker):not(.in-app-browser-recommendation) { margin:1rem 0 0; color:#66586c; font-size:1rem; line-height:1.7; }
+.in-app-browser-recommendation { margin:1rem 0 0; padding:.75rem 1rem; border-radius:12px; color:#8f244c; background:#fff0f4; font-weight:800; }
+@media (max-width:700px) { .home-navigation { width:min(100% - 1rem,1080px); padding-top:.75rem; }.in-app-browser-mask { padding:.75rem; }.in-app-browser-dialog { border-radius:18px; } }

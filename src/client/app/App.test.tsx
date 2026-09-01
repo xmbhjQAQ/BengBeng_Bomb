@@ -26,6 +26,35 @@ describe('App SPA navigation',()=>{
     history.replaceState({},'', '/c/%E0%A4%A');
     render(<App/>);
     expect(screen.getByRole('heading', { name: '链接无法打开' })).toBeVisible();
-    expect(screen.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: '回到首页' })).toHaveAttribute('href', '/');
+  });
+  it('shows a shared home control on non-challenge routes and navigates in place',()=>{
+    history.replaceState({},'', '/report/public-token');
+    const pushState=vi.spyOn(history,'pushState');
+    render(<App/>);
+    fireEvent.click(screen.getByRole('link', { name: '回到首页' }));
+    expect(pushState).toHaveBeenCalledWith({},'', '/');
+    expect(window.location.pathname).toBe('/');
+  });
+  it('does not add a home control to a valid challenge route',()=>{
+    history.replaceState({},'', '/c/self-token');
+    render(<App/>);
+    expect(screen.queryByRole('link', { name: '回到首页' })).not.toBeInTheDocument();
+  });
+  it('blocks only challenge routes for QQ or WeChat browsers',()=>{
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (Linux; Android 14) MicroMessenger/8.0.50' });
+    try {
+      history.replaceState({},'', '/c/self-token');
+      const view = render(<App/>);
+      expect(screen.getByRole('alertdialog')).toBeVisible();
+      history.replaceState({},'', '/report/public-token');
+      fireEvent.popState(window);
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '回到首页' })).toBeVisible();
+      view.unmount();
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUserAgent });
+    }
   });
 });

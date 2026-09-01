@@ -121,6 +121,15 @@ describe('ChallengeView', () => {
     expect(mocks.post).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the challenge error state inside the challenge flow without a home link', async () => {
+    mocks.post.mockRejectedValueOnce(new Error('网络暂时不可用'));
+    render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByRole('heading', { name: '挑战无法打开' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: '返回首页' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '回到首页' })).not.toBeInTheDocument();
+  });
+
   it('starts only from ready and preserves the URL through submission and settlement', async () => {
     mocks.post.mockResolvedValueOnce(opened);
     const initialHref = window.location.href;
