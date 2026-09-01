@@ -70,3 +70,26 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: iOS 内置浏览器遮罩与统计 CSP 修复
+
+**Date**: 2026-09-02
+**Task**: iOS 内置浏览器遮罩与统计 CSP 修复
+**Branch**: `main`
+
+### Summary
+
+放行 iOS QQ/微信挑战，Android/未知平台保留遮罩并加入复制挑战网址控件；同步 Cloudflare Pages 与 Worker CSP，加入一致性回归测试，完成全量校验。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1ed9449` | (see git log) |
+| `ddf5247` | (see git log) |
+| `623b611` | (see git log) |
+
+### Status
+
+[OK] **Completed**
