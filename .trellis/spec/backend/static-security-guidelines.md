@@ -18,6 +18,7 @@ The static header contains a `script-src` directive with first-party sources, th
 ### 3. Contracts
 
 - `secureAsset` always sets `Content-Security-Policy`; API response helpers do not receive third-party script exceptions.
+- `public/_headers` must mirror the static CSP because Cloudflare Pages applies that file to the deployed asset response. Update both definitions together.
 - The unchanged Clarity inline bootstrap in `index.html` is authorized by its exact SHA-256 source hash. Do not add global `script-src 'unsafe-inline'`.
 - `script-src` explicitly permits `https://www.clarity.ms`, `https://scripts.clarity.ms`, and `https://static.cloudflareinsights.com`.
 - Existing `img-src 'self' https: data: blob:` and `connect-src 'self' https:` cover documented Clarity collection endpoints.
@@ -42,6 +43,7 @@ The static header contains a `script-src` directive with first-party sources, th
 ### 6. Tests Required
 
 - HTTP security tests assert the exact Clarity hash, all three approved script hosts, restrictive directives, and absence of `unsafe-inline` in `script-src`.
+- HTTP security tests assert that `public/_headers` carries the same hash and analytics hosts as the Worker policy.
 - Asset smoke/deployment checks inspect built HTML for the matching bootstrap bytes so a formatting edit cannot silently invalidate the hash.
 - Run Worker tests, lint, type-check, production build, and `wrangler deploy --dry-run` after security-header changes.
 

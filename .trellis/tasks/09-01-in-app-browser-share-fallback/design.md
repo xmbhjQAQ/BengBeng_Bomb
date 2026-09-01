@@ -32,4 +32,5 @@
 
 - Keep the official Clarity snippet in `index.html`; authorize its exact inline bytes with a CSP SHA-256 source instead of enabling `unsafe-inline`.
 - Add only `https://www.clarity.ms`, `https://scripts.clarity.ms`, and `https://static.cloudflareinsights.com` to `script-src`. Existing `https:` image/connect allowances already cover Clarity collection endpoints.
-- Test the generated header through `secureAsset` so the Pages-injected Insights beacon and the Clarity bootstrap are both covered without changing application behavior.
+- Mirror the same policy in `public/_headers`, which Cloudflare Pages applies to the generated static response.
+- Test both the generated Worker header and the Pages header so the Pages-injected Insights beacon and the Clarity bootstrap are covered without changing application behavior.

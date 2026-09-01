@@ -35,5 +35,11 @@ describe('HTTP security headers', () => {
     const hash = createHash('sha256').update(bootstrap || '', 'utf8').digest('base64');
     const response = secureAsset(new Response('<!doctype html>'));
     expect(response.headers.get('Content-Security-Policy')).toContain(`'sha256-${hash}'`);
+
+    const pagesHeaders = readFileSync(join(process.cwd(), 'public', '_headers'), 'utf8');
+    expect(pagesHeaders).toContain(`'sha256-${hash}'`);
+    expect(pagesHeaders).toContain('https://www.clarity.ms');
+    expect(pagesHeaders).toContain('https://scripts.clarity.ms');
+    expect(pagesHeaders).toContain('https://static.cloudflareinsights.com');
   });
 });

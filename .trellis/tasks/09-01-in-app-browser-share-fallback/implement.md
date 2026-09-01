@@ -6,7 +6,7 @@
 4. Add a tested file-share helper covering native file sharing, missing `canShare`, false capability, cancellation, image clipboard best effort, and text-copy fallback.
 5. Refactor `ComposerView` to use the helper while preserving existing pre-generation, button states, manual copy control and download path.
 6. Update component tests for the new feedback and ensure no URL/text is passed to native share.
-7. Update the Worker CSP with a hash for the existing Clarity bootstrap and explicit Clarity/Cloudflare Insights script hosts; add a header regression test.
+7. Update the Worker CSP and `public/_headers` with a hash for the existing Clarity bootstrap and explicit Clarity/Cloudflare Insights script hosts; add a parity regression test.
 8. Run `npm run lint -- --no-warn-ignored`, `npm run type-check`, `npm test -- --run`, `npm run build`, and `git diff --check`.
 
 ## Risk / rollback points
