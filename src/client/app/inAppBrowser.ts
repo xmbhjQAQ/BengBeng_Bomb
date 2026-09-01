@@ -7,6 +7,17 @@ export interface InAppBrowserInfo {
 }
 
 /**
+ * QQ/WeChat in-app browsers cannot reliably provide camera access on
+ * Android. iOS browsers all share WebKit, so an in-app-browser notice does
+ * not improve the challenge experience there and should stay out of the
+ * way. Keep this decision pure so the App shell and the notice component
+ * cannot drift apart.
+ */
+export function shouldBlockInAppBrowser(info: InAppBrowserInfo): boolean {
+  return info.kind !== null && info.platform !== 'ios';
+}
+
+/**
  * Detect the embedded browsers that cannot reliably provide camera access.
  * Keeping the classifier pure lets the UI be tested without mutating the
  * process-wide navigator in a jsdom environment.

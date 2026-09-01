@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectInAppBrowser, isCameraChallengePath } from './inAppBrowser';
+import { detectInAppBrowser, isCameraChallengePath, shouldBlockInAppBrowser } from './inAppBrowser';
 
 describe('detectInAppBrowser', () => {
   it('recognizes WeChat on Android', () => {
@@ -30,5 +30,20 @@ describe('isCameraChallengePath', () => {
     expect(isCameraChallengePath('/g/entry/bge1.token')).toBe(false);
     expect(isCameraChallengePath('/g/results/bgr1.token')).toBe(false);
     expect(isCameraChallengePath('/report/br1.token')).toBe(false);
+  });
+});
+
+describe('shouldBlockInAppBrowser', () => {
+  it('blocks Android QQ and WeChat but lets iOS WebKit continue', () => {
+    expect(shouldBlockInAppBrowser({ kind: 'wechat', platform: 'android' })).toBe(true);
+    expect(shouldBlockInAppBrowser({ kind: 'qq', platform: 'android' })).toBe(true);
+    expect(shouldBlockInAppBrowser({ kind: 'wechat', platform: 'ios' })).toBe(false);
+    expect(shouldBlockInAppBrowser({ kind: 'qq', platform: 'ios' })).toBe(false);
+  });
+
+  it('does not block ordinary browsers on any platform', () => {
+    expect(shouldBlockInAppBrowser({ kind: null, platform: 'android' })).toBe(false);
+    expect(shouldBlockInAppBrowser({ kind: null, platform: 'ios' })).toBe(false);
+    expect(shouldBlockInAppBrowser({ kind: null, platform: 'other' })).toBe(false);
   });
 });

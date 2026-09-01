@@ -57,4 +57,17 @@ describe('App SPA navigation',()=>{
       Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUserAgent });
     }
   });
+  it('does not block an iOS QQ or WeChat challenge route',()=>{
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 MicroMessenger/8.0.50' });
+    try {
+      history.replaceState({},'', '/c/ios-token');
+      render(<App/>);
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByText('challenge:ios-token')).toBeVisible();
+      expect(screen.getByText('challenge:ios-token').closest('.app-view')).not.toHaveAttribute('aria-hidden', 'true');
+    } finally {
+      Object.defineProperty(navigator, 'userAgent', { configurable: true, value: originalUserAgent });
+    }
+  });
 });

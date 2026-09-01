@@ -1,15 +1,25 @@
 import { useEffect, useRef } from 'react';
-import { detectInAppBrowser, type DevicePlatform, type InAppBrowserKind } from './inAppBrowser';
+import { CopyButton } from './CopyButton';
+import { detectInAppBrowser, shouldBlockInAppBrowser, type DevicePlatform, type InAppBrowserKind } from './inAppBrowser';
 
-export function InAppBrowserNotice({ visible, userAgent }: { visible: boolean; userAgent?: string }) {
+interface InAppBrowserNoticeProps {
+  visible: boolean;
+  userAgent?: string;
+  /** Full challenge URL; defaults to the current browser URL. */
+  url?: string;
+}
+
+export function InAppBrowserNotice({ visible, userAgent, url }: InAppBrowserNoticeProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const info = detectInAppBrowser(userAgent);
+  const challengeUrl = url ?? (typeof window === 'undefined' ? '' : window.location.href);
+  const blocked = shouldBlockInAppBrowser(info);
 
   useEffect(() => {
-    if (visible && info.kind) dialogRef.current?.focus();
-  }, [info.kind, visible]);
+    if (visible && blocked) dialogRef.current?.focus();
+  }, [blocked, visible]);
 
-  if (!visible || !info.kind) return null;
+  if (!visible || !blocked || !info.kind) return null;
 
   return (
     <div className="in-app-browser-mask">
@@ -28,6 +38,7 @@ export function InAppBrowserNotice({ visible, userAgent }: { visible: boolean; u
           当前正在{browserName(info.kind)}中打开，摄像头无法在这里使用。请点击右上角“···”按钮，选择“在浏览器中打开”。
         </p>
         <p className="in-app-browser-recommendation">{recommendation(info.platform)}</p>
+        <CopyButton value={challengeUrl} className="secondary in-app-browser-copy" label="复制挑战网址" />
       </div>
     </div>
   );
