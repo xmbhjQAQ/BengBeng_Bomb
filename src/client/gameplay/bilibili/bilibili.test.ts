@@ -8,6 +8,7 @@ import {
   getBilibiliMediaCandidates,
   normalizeBilibiliAssetUrl,
   parseBilibiliInput,
+  parseVideoByInput,
   parseVideoByBvid,
 } from './bilibili';
 
@@ -17,8 +18,10 @@ describe('Bilibili source helpers', () => {
     expect(parseBilibiliInput('https://www.bilibili.com/video/BV1B7411m7LV').bvid)
       .toBe('BV1B7411m7LV');
     expect(extractBvid('bv1b7411m7lv')).toBe('BV1b7411m7lv');
-    expect(() => parseBilibiliInput('https://b23.tv/7WpblY1'))
-      .toThrow('请先打开分享短链');
+    expect(parseBilibiliInput('https://b23.tv/7WpblY1'))
+      .toMatchObject({ kind: 'url', url: 'https://b23.tv/7WpblY1' });
+    expect(() => parseBilibiliInput('https://bili23.cn/7WpblY1'))
+      .toThrow('这个地址暂时无法使用');
   });
 
   it('builds the configurable parse request', async () => {
@@ -41,6 +44,66 @@ describe('Bilibili source helpers', () => {
       bvid: 'BV1B7411m7LV',
       key: 'secret',
     });
+  });
+
+  it('sends an allowlisted short link as url and lets bilidirect resolve it', async () => {
+    let request: { url: string; options: RequestInit } | undefined;
+    const data = await parseVideoByInput({
+      input: 'https://b23.tv/7WpblY1?share_source=copy',
+      apiBaseUrl: 'https://bilidirect.example/',
+      fetchImpl: async (url, options) => {
+        request = { url: String(url), options: options ?? {} };
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            bvid: 'BV1B7411m7LV',
+            title: '短链视频',
+            directUrl: 'https://cdn.example/video.mp4',
+            source: {
+              input: 'https://b23.tv/7WpblY1?share_source=copy',
+              resolvedUrl: 'https://www.bilibili.com/video/BV1B7411m7LV',
+              type: 'short',
+            },
+          },
+        }), { status: 200 });
+      },
+    });
+    expect(request?.url).toBe('https://bilidirect.example/api/parse');
+    expect(JSON.parse(String(request?.options.body))).toMatchObject({
+      url: 'https://b23.tv/7WpblY1?share_source=copy',
+    });
+    expect(JSON.parse(String(request?.options.body))).not.toHaveProperty('bvid');
+    expect(data.bvid).toBe('BV1B7411m7LV');
+    expect(data.directUrl).toBe('https://cdn.example/video.mp4');
+    expect(data.source).toBeUndefined();
+  });
+
+  it('keeps standard Bilibili pages on the legacy bvid request shape', async () => {
+    let request: RequestInit | undefined;
+    await parseVideoByInput({
+      input: 'https://www.bilibili.com/video/BV1B7411m7LV?p=2',
+      apiBaseUrl: 'https://bilidirect.example/',
+      fetchImpl: async (_url, options) => {
+        request = options;
+        return new Response(JSON.stringify({
+          ok: true,
+          data: { bvid: 'BV1B7411m7LV', directUrl: 'https://cdn.example/video.mp4' },
+        }), { status: 200 });
+      },
+    });
+    expect(JSON.parse(String(request?.body))).toMatchObject({ bvid: 'BV1B7411m7LV' });
+    expect(JSON.parse(String(request?.body))).not.toHaveProperty('url');
+  });
+
+  it('rejects a short-link response without a canonical BV id', async () => {
+    await expect(parseVideoByInput({
+      input: 'https://b23.tv/7WpblY1',
+      apiBaseUrl: 'https://bilidirect.example/',
+      fetchImpl: async () => new Response(JSON.stringify({
+        ok: true,
+        data: { directUrl: 'https://cdn.example/video.mp4' },
+      }), { status: 200 }),
+    })).rejects.toThrow('视频服务返回内容异常，请稍后重试。');
   });
 
   it('formats metadata for the UI', () => {

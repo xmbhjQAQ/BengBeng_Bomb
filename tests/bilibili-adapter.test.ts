@@ -1,5 +1,5 @@
 import { describe,expect,it,vi } from 'vitest';
-import { fetchDanmaku, parseDirectBvid, resolveBilibili } from '../src/worker/bilibili/adapter';
+import { fetchDanmaku, parseBilibiliInput, parseDirectBvid, resolveBilibili } from '../src/worker/bilibili/adapter';
 import type { WorkerConfig } from '../src/worker/config';
 
 const config:WorkerConfig={challengeTtlSeconds:172800,resultTtlSeconds:172800,ticketTtlSeconds:900,baseUrl:'https://parser.example.com',qn:80,leaderboardMinAttempts:5,leaderboardCacheSeconds:600,leaderboardLimit:20};
@@ -109,4 +109,40 @@ describe('upstream boundaries',()=>{
     await expect(fetchDanmaku(123,'BV1B7411m7LV',{...config,upstreamTextMaxBytes:5},'key',oversized as typeof fetch)).rejects.toMatchObject({status:502});
   });
 });
-describe('creator input parsing',()=>{it('accepts only direct Bilibili video pages or an exact BV id',()=>{expect(parseDirectBvid('https://www.bilibili.com/video/BV1B7411m7LV?p=1')).toBe('BV1B7411m7LV');expect(parseDirectBvid('BV1B7411m7LV')).toBe('BV1B7411m7LV');expect(()=>parseDirectBvid('https://evil.example/BV1B7411m7LV')).toThrow(/链接暂时不支持/);expect(()=>parseDirectBvid('https://b23.tv/demo')).toThrow(/打开分享短链/);});});
+describe('legacy creator input parsing',()=>{it('keeps exact BV extraction while short links use the new URL parser',()=>{expect(parseDirectBvid('https://www.bilibili.com/video/BV1B7411m7LV?p=1')).toBe('BV1B7411m7LV');expect(parseDirectBvid('BV1B7411m7LV')).toBe('BV1B7411m7LV');expect(()=>parseDirectBvid('https://evil.example/BV1B7411m7LV')).toThrow(/链接暂时不支持/);expect(()=>parseDirectBvid('https://b23.tv/demo')).toThrow(/短链接可以直接粘贴/);});});
+
+describe('creator input parsing',()=>{
+  it('sends exact BV ids and standard pages as bvid, while short links use url',async()=>{
+    expect(parseBilibiliInput('BV1B7411m7LV')).toMatchObject({kind:'bvid',bvid:'BV1B7411m7LV'});
+    expect(parseBilibiliInput('http://www.bilibili.com/video/BV1B7411m7LV?p=1#share')).toMatchObject({kind:'url',url:'https://www.bilibili.com/video/BV1B7411m7LV?p=1',bvid:'BV1B7411m7LV'});
+    expect(parseBilibiliInput('https://b23.tv/7WpblY1?share_source=copy')).toMatchObject({kind:'url',url:'https://b23.tv/7WpblY1?share_source=copy'});
+  });
+
+  it('forwards a standard page or b23.tv short link without exposing upstream source diagnostics',async()=>{
+    const fetchImpl=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>{void _input;void _init;return new Response(JSON.stringify({ok:true,data:{bvid:'BV1B7411m7LV',cid:123,page:1,title:'测试',description:'简介',duration:60,directUrl:'https://cdn.example/video.mp4',source:{input:'https://b23.tv/7WpblY1',resolvedUrl:'https://www.bilibili.com/video/BV1B7411m7LV',type:'short'}}}),{status:200,headers:{'Content-Type':'application/json'}});});
+    const result=await resolveBilibili('https://b23.tv/7WpblY1',1,config,'key',fetchImpl as typeof fetch);
+    const request=fetchImpl.mock.calls[0];
+    const body=JSON.parse(String(request?.[1]?.body));
+    expect(body).toMatchObject({url:'https://b23.tv/7WpblY1',page:1,qn:80,fnval:0,fourk:1,probe:1});
+    expect(body).not.toHaveProperty('bvid');
+    expect(result).toMatchObject({bvid:'BV1B7411m7LV'});
+    expect(result.source).toBe('bilibili');
+    expect(JSON.stringify(result)).not.toContain('resolvedUrl');
+
+    fetchImpl.mockClear();
+    await resolveBilibili(parseBilibiliInput('https://www.bilibili.com/video/BV1B7411m7LV?p=2'),2,config,'key',fetchImpl as typeof fetch);
+    const directBody=JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(directBody).toMatchObject({bvid:'BV1B7411m7LV',page:2});
+    expect(directBody).not.toHaveProperty('url');
+  });
+
+  it('rejects unsupported hosts and short-link schemes before upstream fetch',()=>{
+    const cases=['https://evil.example/BV1B7411m7LV','https://m.q.qq.com/a/s/abc','https://bili23.cn/abc','ftp://www.bilibili.com/video/BV1B7411m7LV'];
+    cases.forEach((input)=>expect(()=>parseBilibiliInput(input)).toThrow());
+  });
+
+  it('rejects a short-link response without a canonical BV id',async()=>{
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({ok:true,data:{cid:123,page:1,title:'测试',description:'简介',duration:60,directUrl:'https://cdn.example/video.mp4'}}),{status:200,headers:{'Content-Type':'application/json'}}));
+    await expect(resolveBilibili('https://b23.tv/7WpblY1',1,config,'key',fetchImpl as typeof fetch)).rejects.toMatchObject({status:502});
+  });
+});

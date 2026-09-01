@@ -1,6 +1,6 @@
 import { CLIENT_CONFIG } from '../shared/config/client';
 import { ContractError, decodeNickname, decodeOutcome, decodeScoreTrace, GROUP_RESULTS_DEFAULT_LIMIT, GROUP_RESULTS_MAX_LIMIT, isRecord, type ChallengePayload, type GroupEntryPayload, type GroupInvitationPayload, type GroupManagePayload, type GroupParticipantResult, type GroupResultPayload, type ManageResult, type ReportPayload } from '../shared/contracts';
-import { fetchDanmaku, parseDirectBvid, resolveBilibili, UpstreamError } from './bilibili/adapter';
+import { fetchDanmaku, parseBilibiliInput, resolveBilibili, UpstreamError } from './bilibili/adapter';
 import { CapabilityError, challengeId, issueChallenge, issueGroupEntry, issueGroupInvitation, issueGroupManage, issueGroupResult, issueManage, issueReport, issueVideoTicket, readChallenge, readGroupEntry, readGroupInvitation, readGroupManage, readGroupResult, readManage, readReport, readVideoTicket } from './capabilities/tokens';
 import { randomToken, sha256 } from './capabilities/crypto';
 import { readConfig, type Env } from './config';
@@ -71,9 +71,9 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
   if (url.pathname === '/api/health' && request.method === 'GET') return json({ service: 'bengbeng-bomb', ok: true });
   if (url.pathname === '/api/leaderboard' && request.method === 'GET') return leaderboard(request,repo,config,ctx);
   if (url.pathname === '/api/bilibili/parse' && request.method === 'POST') {
-    const body = await readJson(request); if (!isRecord(body) || typeof body.input !== 'string') return failure('INVALID_INPUT','请粘贴 B站 BV 视频链接');
-    const bvid=parseDirectBvid(body.input);
-    const playback = await resolveBilibili(bvid, 1, config, env.BILIDIRECT_API_KEY);
+    const body = await readJson(request); if (!isRecord(body) || typeof body.input !== 'string') return failure('INVALID_INPUT','请粘贴 B站视频链接');
+    const input = parseBilibiliInput(body.input);
+    const playback = await resolveBilibili(input, 1, config, env.BILIDIRECT_API_KEY);
     const videoTicket = await issueVideoTicket(playback, now + config.ticketTtlSeconds, env.APP_SIGNING_SECRET);
     return json({ video: playback, videoTicket });
   }

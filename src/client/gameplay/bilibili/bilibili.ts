@@ -3,16 +3,9 @@ export const DEFAULT_API_KEY = '';
 export const BVID_PATTERN = /BV[0-9A-Za-z]{10,}/i;
 const VIDEO_REQUEST_TIMEOUT_MS = 15_000;
 
-const SHORT_LINK_HOSTS = new Set([
-  'b23.tv',
-  'www.b23.tv',
-  'bili22.cn',
-  'bili23.cn',
-  'bili33.cn',
-  'bili2233.cn',
-]);
 const QQ_SHARE_HOST = 'm.q.qq.com';
 const BILIBILI_VIDEO_HOSTS = new Set(['bilibili.com', 'www.bilibili.com', 'm.bilibili.com']);
+const isB23Host = (hostname: string) => hostname === 'b23.tv' || hostname.endsWith('.b23.tv');
 
 export class BilibiliInputError extends Error {
   readonly code: string;
@@ -173,21 +166,40 @@ function isQqShareUrl(url: URL) {
   return url.hostname.toLowerCase() === QQ_SHARE_HOST && /^\/a\/s\//i.test(url.pathname);
 }
 
-export function parseBilibiliInput(input: unknown): { kind: 'bvid'; bvid: string; raw: string } {
+export type ParsedBilibiliInput =
+  | { kind: 'bvid'; bvid: string; raw: string }
+  | { kind: 'url'; url: string; raw: string; bvid?: string };
+
+function normalizeInputUrl(url: URL) {
+  const normalized = new URL(url.href);
+  normalized.protocol = 'https:';
+  normalized.hash = '';
+  return normalized.href;
+}
+
+export function parseBilibiliInput(input: unknown): ParsedBilibiliInput {
   const raw = String(input ?? '').trim();
   if (!raw) throw new BilibiliInputError('请先粘贴一个 B 站视频链接。');
+  const exact = raw.match(/^BV[0-9A-Za-z]{10,}$/i);
+  if (exact) return { kind: 'bvid', bvid: exact[0], raw };
 
   const url = parseUrl(raw);
   const hostname = url.hostname.toLowerCase();
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new BilibiliInputError('这个链接暂时不支持，请粘贴 B 站视频页面或 b23.tv 短链接。');
+  }
+  if (url.username || url.password || (url.port && url.port !== '443')) {
+    throw new BilibiliInputError('这个链接暂时不支持，请粘贴 B 站视频页面或 b23.tv 短链接。');
+  }
   if (BILIBILI_VIDEO_HOSTS.has(hostname) && /^\/video\//i.test(url.pathname)) {
     const directBvid = extractBvid(url.pathname);
-    if (directBvid) return { kind: 'bvid', bvid: directBvid, raw };
+    if (directBvid) return { kind: 'url', url: normalizeInputUrl(url), bvid: directBvid, raw };
   }
-  if (SHORT_LINK_HOSTS.has(hostname)) {
-    throw new BilibiliInputError(
-      '请先打开分享短链，再复制打开后的 B 站视频页面地址。',
-      'UNSUPPORTED_SHORT_LINK',
-    );
+  if (isB23Host(hostname)) {
+    if (url.pathname === '/' || !url.pathname) {
+      throw new BilibiliInputError('链接里没有找到视频，请检查后重试。');
+    }
+    return { kind: 'url', url: normalizeInputUrl(url), raw };
   }
   if (isQqShareUrl(url)) {
     throw new BilibiliInputError(
@@ -195,7 +207,7 @@ export function parseBilibiliInput(input: unknown): { kind: 'bvid'; bvid: string
       'UNSUPPORTED_QQ_SHARE',
     );
   }
-  throw new BilibiliInputError('这个地址暂时无法使用，请粘贴 B 站视频页面地址。');
+  throw new BilibiliInputError('这个地址暂时无法使用，请粘贴 B 站视频页面或 b23.tv 短链接。');
 }
 
 function normalizeApiBaseUrl(apiBaseUrl: string): string {
@@ -237,17 +249,20 @@ const toPositiveInteger = (value: unknown, fallback: number) => {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 };
 
-export async function parseVideoByBvid(options: {
-  bvid: string;
+interface ParseVideoOptions {
   page?: number;
   qn?: number;
   apiBaseUrl?: string;
   apiKey?: string;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
-}): Promise<BilibiliVideoData> {
+}
+
+type ParseVideoInput = string | ParsedBilibiliInput;
+
+async function parseVideo(options: ParseVideoOptions & { input: ParseVideoInput }): Promise<BilibiliVideoData> {
   const {
-    bvid,
+    input,
     page = 1,
     qn = 80,
     apiBaseUrl = DEFAULT_API_BASE_URL,
@@ -255,13 +270,22 @@ export async function parseVideoByBvid(options: {
     fetchImpl = globalThis.fetch,
     signal,
   } = options;
-  const normalizedBvid = extractBvid(bvid);
-  if (!normalizedBvid) throw new BilibiliInputError('这段视频链接无法识别，请重新选择。');
+  let parsed: ParsedBilibiliInput;
+  try {
+    parsed = typeof input === 'string'
+      ? parseBilibiliInput(input)
+      : input.kind === 'bvid'
+        ? parseBilibiliInput(input.bvid)
+        : parseBilibiliInput(input.url);
+  } catch (error) {
+    if (error instanceof BilibiliInputError) throw error;
+    throw new BilibiliInputError('这段视频链接无法识别，请重新选择。');
+  }
   if (typeof fetchImpl !== 'function') throw new BilibiliApiError('当前浏览器无法连接视频服务，请稍后重试。');
 
   const requestedPage = toPositiveInteger(page, 1);
   const payload: Record<string, unknown> = {
-    bvid: normalizedBvid,
+    ...(parsed.kind === 'bvid' || parsed.bvid ? { bvid: parsed.bvid } : { url: parsed.url }),
     page: requestedPage,
     qn: toPositiveInteger(qn, 80),
     fnval: 0,
@@ -336,14 +360,28 @@ export async function parseVideoByBvid(options: {
       status: response.status,
     });
   }
+  // bilidirect exposes `source` as diagnostics for URL resolution. Keep the
+  // direct-player result on the stable video contract too; the resolved URL is
+  // not user-facing state and must not be carried into later projections.
+  const safeData = { ...typedData };
+  delete safeData.source;
+  const responseBvid = typeof typedData.bvid === 'string' && /^BV[0-9A-Za-z]{10,}$/i.test(typedData.bvid.trim())
+    ? extractBvid(typedData.bvid.trim())
+    : null;
+  const stableBvid = responseBvid || parsed.bvid || null;
+  if (!stableBvid) {
+    throw new BilibiliApiError('视频服务返回内容异常，请稍后重试。', {
+      status: response.status,
+    });
+  }
   const normalizedCover = normalizeBilibiliAssetUrl(typedData.cover);
   const normalizedPic = normalizeBilibiliAssetUrl(typedData.pic);
   const danmakuRecord = isRecord(typedData.danmaku) ? typedData.danmaku : undefined;
   const rawDanmakuUrl = typedData.danmakuUrl || typedData.danmukuUrl || danmakuRecord?.url;
   const normalizedDanmakuUrl = normalizeDanmakuApiUrl(rawDanmakuUrl, apiBaseUrl);
   return {
-    ...typedData,
-    bvid: typedData.bvid || normalizedBvid,
+    ...safeData,
+    bvid: stableBvid,
     title: typedData.title || '',
     cover: normalizedCover || normalizedPic || undefined,
     pic: normalizedPic || normalizedCover || undefined,
@@ -355,6 +393,22 @@ export async function parseVideoByBvid(options: {
       : typedData.danmaku,
     directUrl: normalizeBilibiliAssetUrl(typedData.directUrl),
   } as BilibiliVideoData;
+}
+
+/**
+ * Parse a Bilibili page or an allowlisted b23.tv short link for the legacy
+ * direct-player path. The browser never follows the short-link redirect; the
+ * bilidirect service resolves it server-side.
+ */
+export async function parseVideoByInput(options: ParseVideoOptions & { input: ParseVideoInput }): Promise<BilibiliVideoData> {
+  return parseVideo(options);
+}
+
+/** Keep the old BV-only API for callers that already have a canonical id. */
+export async function parseVideoByBvid(options: ParseVideoOptions & { bvid: string }): Promise<BilibiliVideoData> {
+  const normalizedBvid = extractBvid(options.bvid);
+  if (!normalizedBvid) throw new BilibiliInputError('这段视频链接无法识别，请重新选择。');
+  return parseVideo({ ...options, input: normalizedBvid });
 }
 
 export function formatDuration(seconds: number) {

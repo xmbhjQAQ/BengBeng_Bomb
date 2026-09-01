@@ -8,6 +8,7 @@ import {
   getBilibiliMediaCandidates,
   normalizeBilibiliAssetUrl,
   parseBilibiliInput,
+  parseVideoByInput,
   parseVideoByBvid,
   type BilibiliVideoData,
 } from './bilibili';
@@ -119,8 +120,8 @@ export function useBilibiliPlayer(options: UseBilibiliPlayerOptions) {
     setLoading(true);
     setSourceError(null);
     try {
-      const data = await parseVideoByBvid({
-        bvid: parsed.bvid,
+      const data = await parseVideoByInput({
+        input: parsed,
         page: options.page,
         qn: options.qn,
         apiBaseUrl: options.apiBaseUrl,

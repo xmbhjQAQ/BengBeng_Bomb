@@ -60,6 +60,6 @@ describe('apiRequest', () => {
       error: { code: 'INVALID_INPUT', message: '请粘贴 B站 BV 视频链接' },
     }), { status: 400, headers: { 'Content-Type': 'application/json' } })));
 
-    await expect(apiRequest('/api/bilibili/parse')).rejects.toThrow('请粘贴有效的 B 站视频页面地址。');
+    await expect(apiRequest('/api/bilibili/parse')).rejects.toThrow('请粘贴有效的 B 站视频页面或 b23.tv 短链接。');
   });
 });

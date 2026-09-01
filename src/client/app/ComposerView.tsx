@@ -249,7 +249,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
         <input aria-label="B站视频链接" value={input} onChange={(event) => setInput(event.target.value)} placeholder="https://www.bilibili.com/video/BV..." />
         <button disabled={busy || !input.trim()} onClick={() => void parse()}>{busy ? '解析中…' : '解析视频'}</button>
       </div>
-      <p className="hint">请粘贴 B 站视频页面地址；短链接请先打开后再复制地址。</p>
+      <p className="hint">支持 B 站视频页面和 b23.tv 短链接，粘贴后即可解析。</p>
       {error && <p className="error" role="alert">{error}</p>}
       {parsed && <VideoPreview video={parsed.video} />}
     </section>

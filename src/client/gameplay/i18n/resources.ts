@@ -10,7 +10,7 @@ export const zhCN = {
     placeholder: 'https://www.bilibili.com/video/BV...',
     parse: '解析视频',
     parsing: '解析中…',
-    hint: '请粘贴 B 站视频页面地址；弹幕加载失败也不影响挑战。',
+    hint: '支持 B 站视频页面和 b23.tv 短链接；弹幕加载失败也不影响挑战。',
     danmakuLoading: '弹幕加载中…',
     danmakuReady: '弹幕已加载并与视频同步。',
     danmakuFailed: '弹幕加载失败，但视频挑战仍可继续。',

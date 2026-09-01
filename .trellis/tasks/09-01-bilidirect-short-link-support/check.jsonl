@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check Worker adapter and route against backend contract."}
+{"file": ".trellis/spec/backend/release-hardening.md", "reason": "Check upstream safety and release boundaries."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check client input, copy and playback compatibility."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check end-to-end contract consistency."}
+{"file": ".trellis/tasks/09-01-bilidirect-short-link-support/research/bilidirect-main-short-link-contract.md", "reason": "Check implementation against inspected upstream behavior."}

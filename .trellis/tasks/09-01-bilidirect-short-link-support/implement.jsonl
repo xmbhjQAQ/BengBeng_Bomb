@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Worker bilidirect contract, capability sanitization, error matrix and required tests."}
+{"file": ".trellis/spec/backend/release-hardening.md", "reason": "Upstream timeout/retry/body-limit and release safety contracts."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend parser, user-facing copy, playback and no-navigation contracts."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Trace the input contract from UI through Worker to bilidirect and back."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing parser/request helpers and avoid divergent validation."}
+{"file": ".trellis/tasks/09-01-bilidirect-short-link-support/research/bilidirect-main-short-link-contract.md", "reason": "Verified main-branch upstream short-link request and response contract."}

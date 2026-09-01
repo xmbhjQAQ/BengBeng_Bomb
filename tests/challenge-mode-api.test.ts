@@ -1,4 +1,4 @@
-import { describe,expect,it } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import worker from '../src/worker';
 import { issueVideoTicket,readChallenge } from '../src/worker/capabilities/tokens';
 import type { Env } from '../src/worker/config';
@@ -16,4 +16,24 @@ describe('challenge creation modes',()=>{
   });
   it('keeps classic nickname validation backward compatible',async()=>{const now=Math.floor(Date.now()/1000);const videoTicket=await issueVideoTicket(video,now+60,secret);expect((await create({videoTicket})).status).toBe(400);expect((await create({videoTicket,initiator:'小明'})).status).toBe(200);expect((await create({videoTicket,mode:'unknown'})).status).toBe(400);});
   it('uses the configured public origin instead of the request Host',async()=>{const now=Math.floor(Date.now()/1000);const videoTicket=await issueVideoTicket(video,now+60,secret);const response=await worker.fetch(new Request('https://attacker.example/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoTicket,mode:'self'})}),{...env,PUBLIC_ORIGIN:'https://trusted.example'} as Env,context);const envelope=await response.json() as {ok:true;data:{challengeUrl:string;manageUrl:string}};expect(envelope.data.challengeUrl).toMatch(/^https:\/\/trusted\.example\/c\//);expect(envelope.data.manageUrl).toMatch(/^https:\/\/trusted\.example\/manage#/);});
+  it('routes an allowlisted b23.tv short link through bilidirect and strips source diagnostics',async()=>{
+    const fetchImpl=vi.fn(async(_input:RequestInfo|URL,init?:RequestInit)=>{
+      expect(String(_input)).toBe('https://api.example.com/api/parse');
+      expect(JSON.parse(String(init?.body))).toMatchObject({url:'https://b23.tv/7WpblY1',page:1});
+      return new Response(JSON.stringify({ok:true,data:{bvid:'BV1B7411m7LV',cid:12,page:1,title:'短链视频',description:'',cover:'',duration:60,directUrl:'https://cdn.example/video.mp4',source:{resolvedUrl:'https://www.bilibili.com/video/BV1B7411m7LV'}}}),{status:200,headers:{'Content-Type':'application/json'}});
+    });
+    vi.stubGlobal('fetch',fetchImpl);
+    try {
+      const response=await worker.fetch(new Request('https://bomb.example/api/bilibili/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:'https://b23.tv/7WpblY1'})}),env,context);
+      const envelope=await response.json() as {ok:true;data:{video:Record<string,unknown>;videoTicket:string}};
+      expect(response.status).toBe(200);
+      expect(envelope.data.video).toMatchObject({bvid:'BV1B7411m7LV',media:['https://cdn.example/video.mp4']});
+      expect(envelope.data.video.source).toBe('bilibili');
+      expect(JSON.stringify(envelope.data.video)).not.toContain('resolvedUrl');
+      expect(envelope.data.videoTicket).toMatch(/^bv1\./);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

@@ -36,7 +36,7 @@ function userMessage(code: string, message: string, path: string): string {
   // Keep endpoint/identifier terminology out of the ordinary UI while
   // retaining the server's more specific copy for other validation errors.
   if (/凭证|B站|BV|CID|分P|报告|接口/.test(message)) {
-    if (path.includes('/bilibili/parse')) return '请粘贴有效的 B 站视频页面地址。';
+    if (path.includes('/bilibili/parse')) return '请粘贴有效的 B 站视频页面或 b23.tv 短链接。';
     if (path.includes('/reports/resolve')) return '这条公开战报已失效或无法打开。';
     if (path.includes('/manage')) return '私密结果入口无效或已失效，请使用保存的入口。';
     return '请求信息不完整，请重新操作。';
