@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The browser-held attempt bearer must stay consistent with the Worker/D1 started/completed lifecycle even though the implementation is client-side."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Extend the existing storage guards, homepage tabs, challenge state machine and result navigation without duplicating validation or lifecycle logic."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Preserve the one-page camera flow, local-only face-data boundary, bounded score trace handling, accessible navigation and user-facing copy standards."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep persisted convenience state separate from React runtime challenge state and the server source of truth."}
+{"file":".trellis/tasks/09-02-local-challenge-history-recovery/research/existing-storage-and-lifecycle.md","reason":"Provides repository evidence, exact current storage keys, lifecycle gaps, privacy constraints and the no-backend-load conclusion."}

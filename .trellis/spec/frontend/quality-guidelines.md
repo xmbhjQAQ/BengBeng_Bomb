@@ -41,7 +41,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Calibration does not require or mount an interactive player. The ready stage may mount ArtPlayer to become media-ready, but its host must remain `inert`, `aria-disabled` and pointer-locked until the reducer enters an active challenge phase.
 - Claim the one-time attempt only from the explicit ready-stage start gesture. Camera/model/calibration failures never call `/api/challenges/start`.
 - When a local result exists, close the camera and show an in-page submitting state. A failed completion request retains the same attempt token and immutable local result; retry sends the identical completion payload, and successful completion clears the attempt before rendering settlement in the same component tree.
-- Store the attempt bearer only in per-tab `sessionStorage`, never in URLs, images, D1, analytics, or logs.
+- Store an unfinished attempt bearer in the versioned, expiry-bounded local active-attempt registry so a browser restart can recover the same server attempt; keep the token-scoped `sessionStorage` keys as migration/failure fallback. Never put the bearer in URLs, images, D1, analytics, logs, or user-visible text. The persistent record may contain only the attempt token, server-required group attempt id/nickname, challenge identity and timestamps—never calibration, camera, playback-position or score-trace state.
 - After completion succeeds, persist a sanitized settlement snapshot under a challenge-token-scoped `sessionStorage` key so a same-tab refresh can restore the curve, heatmap and report link. On reload, apply that snapshot only after `/api/challenges/open` confirms `session.state === 'completed'` and its `result_expires_at` is still current; malformed, expired, missing or server-incomplete snapshots must be cleared and must not bypass the one-time challenge conflict state.
 - During active playback, provide an immersive fixed player, top-left status, top-right circular local camera bubble, and centered face-loss/recovery messaging.
 - Treat MediaPipe task creation as a serialized browser-global operation. Try the automatically selected WASM fileset with GPU then CPU; if both fail, retry the bundled `vision_wasm_nosimd_internal` fileset with GPU then CPU. A rejected initialization must not poison later retries.
@@ -49,7 +49,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Detector initialization errors shown in the UI must remain collapsed behind the friendly recovery message and be length-bounded; redact URLs, local paths, bearer values and token/key/secret assignments before logging or rendering them.
 - Share cards accept only public challenge/report URLs, render the video cover with `crossOrigin='anonymous'` and `referrerPolicy='no-referrer'`, and degrade to a branded placeholder.
 - All thresholds and timeouts come from `src/shared/config/client.ts`; no component owns private copies.
-- The `/` homepage keeps Composer and permanent leaderboard as two accessible state-switched panels. Tab changes preserve Composer state and do not change URL; only entering a real self challenge uses SPA `pushState` to `/c/<token>`.
+- The `/` homepage keeps Composer, local “我的挑战” history and permanent leaderboard as three accessible state-switched panels. Tab changes preserve Composer state and do not change URL; only entering a real challenge/result/manage view uses SPA history. Local history is bounded to 50 validated records, never polls, and keeps private management URLs out of visible long-link text and analytics.
 - Score charts use “难绷程度” for the existing signal because higher values approach failure. A held result draws its terminal marker at video duration rather than relabeling the last valid sample as the endpoint.
 
 ### 4. Validation & Error Matrix
@@ -96,7 +96,7 @@ Recipient phases are reducer-owned and include preparation/calibration, `running
 - Detector hook tests cover StrictMode/pending-request reuse, no premature close, final close exactly once, and a fresh initialization after a completed failure.
 - Trace tests cover dynamic bucketing, the 600-point cap, valid challenge phases, reset/restart isolation, deep immutability and identical retry payloads.
 - Chart tests cover empty/one/constant/long traces, danger/failure references, real held endpoint semantics, keyboard/touch labels and reduced motion.
-- Home tests cover lazy leaderboard loading, loading/empty/error retry, preserved Composer state, inaccessible hidden panels, keyboard tabs, self/share actions and pushState/popstate without reload.
+- Home tests cover lazy leaderboard loading, loading/empty/error retry, preserved Composer state, inaccessible hidden panels, three-way keyboard tabs, classic/self/group history registration, private fragment routing, history removal/clear, self/share actions and pushState/popstate without reload.
 - Capability/share tests reject manage URLs and temporary CDN fields.
 - Run lint, type-check, all tests, production build, and desktop/mobile visual smoke checks.
 

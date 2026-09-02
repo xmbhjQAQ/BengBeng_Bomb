@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ComposerView } from './ComposerView';
+import { readPreferredNickname, rememberPreferredNickname } from '../storage/preferredNickname';
+import { readCreatedChallenges } from '../storage/createdChallenges';
 
 const mocks = vi.hoisted(() => ({ post: vi.fn(), createShareCard: vi.fn(), downloadBlob: vi.fn() }));
 vi.mock('../api/client', () => ({ post: mocks.post }));
@@ -24,6 +26,7 @@ const parsed = {
 describe('ComposerView links', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     mocks.post.mockReset();
     mocks.createShareCard.mockReset();
     mocks.createShareCard.mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
@@ -31,6 +34,27 @@ describe('ComposerView links', () => {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
+  });
+
+  it('prefills and updates the shared preferred nickname', async () => {
+    rememberPreferredNickname('上次昵称');
+    mocks.post.mockResolvedValueOnce(parsed).mockResolvedValueOnce({
+      challengeUrl: 'https://example.com/c/nickname-test',
+      manageUrl: 'https://example.com/manage#m=nickname-private',
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    });
+    render(<ComposerView />);
+    fireEvent.change(screen.getByLabelText('B站视频链接'), { target: { value: 'BV1B7411m7LV' } });
+    fireEvent.click(screen.getByRole('button', { name: '解析视频' }));
+    await screen.findByText('测试视频');
+    const nickname = screen.getAllByRole('textbox')[1]!;
+    expect(nickname).toHaveValue('上次昵称');
+    fireEvent.change(nickname, { target: { value: '新的昵称' } });
+    fireEvent.blur(nickname);
+    fireEvent.click(screen.getByRole('button', { name: '生成挑战' }));
+    await screen.findByText('挑战已装好');
+    expect(readPreferredNickname()).toBe('新的昵称');
+    expect(readCreatedChallenges()).toEqual([expect.objectContaining({ kind: 'classic', initiator: '新的昵称', challengeUrl: 'https://example.com/c/nickname-test' })]);
   });
 
   afterEach(() => {
@@ -88,6 +112,7 @@ describe('ComposerView links', () => {
     expect(screen.getByText('https://example.com/g/entry/…oken')).toBeVisible();
     expect(screen.getByText('群组结果链接')).toBeVisible();
     expect(screen.queryByText('群组参与链接')).not.toBeInTheDocument();
+    expect(readCreatedChallenges()).toEqual([expect.objectContaining({ kind: 'group', entryUrl: created.entryUrl, resultUrl: created.resultUrl })]);
   });
 
   it('shares the generated challenge image without passing a URL', async () => {

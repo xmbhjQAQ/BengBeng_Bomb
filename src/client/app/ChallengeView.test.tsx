@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlaybackData } from '../../shared/contracts';
+import { ApiClientError } from '../api/client';
+import { readActiveAttempt, removeActiveAttempt, writeActiveAttempt } from '../storage/activeAttempts';
 import { ChallengeView } from './ChallengeView';
 
 const mocks = vi.hoisted(() => {
@@ -34,7 +36,10 @@ const mocks = vi.hoisted(() => {
   return { post: vi.fn(), demo };
 });
 
-vi.mock('../api/client', () => ({ post: mocks.post }));
+vi.mock('../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/client')>();
+  return { ...actual, post: mocks.post };
+});
 vi.mock('../gameplay/app/useSmileDemo', () => ({ useSmileDemo: () => mocks.demo }));
 vi.mock('../gameplay/app/CameraPanel', () => ({
   CameraPanel: ({ compact, bubble }: { compact?: boolean; bubble?: boolean }) => (
@@ -71,8 +76,8 @@ const opened = {
     kind: 'challenge',
     video: playback,
     initiator: '发起者',
-    createdAt: 100,
-    expiresAt: 200,
+    createdAt: Math.floor(Date.now() / 1000) - 100,
+    expiresAt: Math.floor(Date.now() / 1000) + 3_600,
     nonce: 'nonce',
     mode: 'classic',
   },
@@ -86,6 +91,7 @@ describe('ChallengeView', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     mocks.post.mockReset();
     Object.assign(mocks.demo, {
       result: null,
@@ -101,6 +107,7 @@ describe('ChallengeView', () => {
     });
     mocks.demo.selectResolvedBilibili.mockReset();
     mocks.demo.openCamera.mockReset();
+    mocks.demo.closeCamera.mockReset();
     mocks.demo.startChallenge.mockReset();
   });
 
@@ -157,6 +164,10 @@ describe('ChallengeView', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始挑战' }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/challenges/start', { challengeToken: 'public-token' }));
     await waitFor(() => expect(mocks.demo.startChallenge).toHaveBeenCalledTimes(1));
+    expect(readActiveAttempt('single', 'public-token')).toMatchObject({
+      attemptToken: 'attempt-token',
+      challengeToken: 'public-token',
+    });
 
     mocks.post.mockResolvedValueOnce({
       outcome: 'failed',
@@ -183,8 +194,9 @@ describe('ChallengeView', () => {
 
   it('keeps a failed submission on-page and retries the same result', async () => {
     sessionStorage.setItem('bengbeng-attempt:public-token', 'existing-attempt');
-    mocks.post.mockResolvedValueOnce(opened);
+    mocks.post.mockResolvedValueOnce({ ...opened, session: { state: 'started' } });
     const view = render(<ChallengeView token="public-token" />);
+    fireEvent.click(await screen.findByRole('button', { name: '重新开始本轮' }));
     await screen.findByText('测试视频');
     fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
     mocks.post.mockRejectedValueOnce(new Error('网络暂时不可用'));
@@ -201,6 +213,166 @@ describe('ChallengeView', () => {
     expect(completionCalls[1]?.[1]).toEqual(completionCalls[0]?.[1]);
     expect(completionCalls[0]?.[1]).toMatchObject({ scoreTrace: [{timeSeconds:1,score:12}] });
     expect(sessionStorage.getItem('bengbeng-attempt:public-token')).toBeNull();
+    expect(readActiveAttempt('single', 'public-token')).toBeNull();
+  });
+
+  it('migrates a legacy single attempt and asks before restarting from calibration', async () => {
+    sessionStorage.setItem('bengbeng-attempt:public-token', 'legacy-attempt');
+    mocks.post.mockResolvedValueOnce({ ...opened, session: { state: 'started' } });
+    const view = render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByRole('heading', { name: '上次挑战还没有完成' })).toBeVisible();
+    expect(readActiveAttempt('single', 'public-token')).toMatchObject({ attemptToken: 'legacy-attempt' });
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '重新开始本轮' }));
+    expect(screen.getByRole('button', { name: '我知道了，接受挑战' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
+    Object.assign(mocks.demo, {
+      phase: 'ready', profile: { quality: 'good' }, cameraStatus: 'ready', detectorStatus: 'ready',
+      canStart: true, videoReady: true, bilibiliSelection: { dimension: { width: 16, height: 9 } },
+    });
+    view.rerender(<ChallengeView token="public-token" />);
+    fireEvent.click(screen.getByRole('button', { name: '开始挑战' }));
+
+    await waitFor(() => expect(mocks.demo.startChallenge).toHaveBeenCalledTimes(1));
+    expect(mocks.post.mock.calls.filter(([path]) => path === '/api/challenges/start')).toHaveLength(0);
+  });
+
+  it('drops a stale local bearer when the server still reports an opened challenge', async () => {
+    writeActiveAttempt({
+      kind: 'single', challengeToken: 'public-token', attemptToken: 'stale-attempt',
+      startedAt: Math.floor(Date.now() / 1000) - 10, expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+    sessionStorage.setItem('bengbeng-attempt:public-token', 'stale-attempt');
+    mocks.post.mockResolvedValueOnce(opened);
+
+    render(<ChallengeView token="public-token" />);
+
+    expect(await screen.findByText('测试视频')).toBeVisible();
+    await waitFor(() => expect(readActiveAttempt('single', 'public-token')).toBeNull());
+    expect(sessionStorage.getItem('bengbeng-attempt:public-token')).toBeNull();
+    expect(screen.queryByRole('heading', { name: '上次挑战还没有完成' })).not.toBeInTheDocument();
+  });
+
+  it('recovers a group attempt with its original nickname without starting twice', async () => {
+    writeActiveAttempt({
+      kind: 'group', challengeToken: 'group-token', attemptToken: 'group-attempt', attemptId: 'attempt-id',
+      nickname: '群友甲', startedAt: Math.floor(Date.now() / 1000) - 10,
+      expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+    mocks.post.mockResolvedValueOnce({
+      challenge: { ...opened.challenge, kind: 'group-invitation', mode: 'group' },
+      group: { ...opened.challenge, kind: 'group-invitation', mode: 'group', state: 'active' },
+      playback, stats: opened.stats, session: null,
+    });
+    const view = render(<ChallengeView token="group-token" group />);
+
+    expect(await screen.findByRole('heading', { name: '上次挑战还没有完成' })).toBeVisible();
+    expect(screen.getByText('本轮仍使用昵称“群友甲”。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '重新开始本轮' }));
+    fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
+    Object.assign(mocks.demo, {
+      phase: 'ready', profile: { quality: 'good' }, cameraStatus: 'ready', detectorStatus: 'ready',
+      canStart: true, videoReady: true, bilibiliSelection: { dimension: { width: 16, height: 9 } },
+    });
+    view.rerender(<ChallengeView token="group-token" group />);
+    expect(screen.getByRole('textbox', { name: /你的昵称/ })).toHaveValue('群友甲');
+    expect(screen.getByRole('textbox', { name: /你的昵称/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '开始挑战' }));
+
+    await waitFor(() => expect(mocks.demo.startChallenge).toHaveBeenCalledTimes(1));
+    expect(mocks.post.mock.calls.filter(([path]) => path === '/api/groups/start')).toHaveLength(0);
+  });
+
+  it('migrates an old group attempt without a nickname and still reuses its bearer', async () => {
+    sessionStorage.setItem('bengbeng-group-attempt:group-token', 'legacy-group-attempt');
+    sessionStorage.setItem('bengbeng-group-attempt-id:group-token', 'legacy-group-id');
+    mocks.post.mockResolvedValueOnce({
+      challenge: { ...opened.challenge, kind: 'group-invitation', mode: 'group' },
+      group: { ...opened.challenge, kind: 'group-invitation', mode: 'group', state: 'active' },
+      playback, stats: opened.stats, session: null,
+    });
+    const view = render(<ChallengeView token="group-token" group />);
+
+    expect(await screen.findByRole('heading', { name: '上次挑战还没有完成' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '重新开始本轮' }));
+    fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
+    Object.assign(mocks.demo, {
+      phase: 'ready', profile: { quality: 'good' }, cameraStatus: 'ready', detectorStatus: 'ready',
+      canStart: true, videoReady: true, bilibiliSelection: { dimension: { width: 16, height: 9 } },
+    });
+    view.rerender(<ChallengeView token="group-token" group />);
+    expect(screen.getByText('恢复后会沿用本轮开始时填写的昵称。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '开始挑战' }));
+    await waitFor(() => expect(mocks.demo.startChallenge).toHaveBeenCalledTimes(1));
+    expect(mocks.post.mock.calls.filter(([path]) => path === '/api/groups/start')).toHaveLength(0);
+  });
+
+  it('clears an invalid persisted attempt but preserves it after a temporary submission error', async () => {
+    writeActiveAttempt({
+      kind: 'single', challengeToken: 'public-token', attemptToken: 'persisted-attempt',
+      startedAt: Math.floor(Date.now() / 1000) - 10, expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+    mocks.post.mockResolvedValueOnce({ ...opened, session: { state: 'started' } });
+    const view = render(<ChallengeView token="public-token" />);
+    await screen.findByRole('heading', { name: '上次挑战还没有完成' });
+    fireEvent.click(screen.getByRole('button', { name: '重新开始本轮' }));
+    fireEvent.click(screen.getByRole('button', { name: '我知道了，接受挑战' }));
+
+    mocks.post.mockRejectedValueOnce(new Error('网络暂时不可用'));
+    Object.assign(mocks.demo, { phase: 'failed', result: { outcome: 'failed', videoPositionSeconds: 8, scoreTrace: [] } });
+    view.rerender(<ChallengeView token="public-token" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('网络暂时不可用');
+    expect(readActiveAttempt('single', 'public-token')).not.toBeNull();
+
+    mocks.post.mockRejectedValueOnce(new ApiClientError('INVALID_ATTEMPT', '本轮挑战已经失效，请重新开始。'));
+    fireEvent.click(screen.getByRole('button', { name: '重新提交' }));
+    expect(await screen.findByRole('heading', { name: '本轮挑战已结束' })).toBeVisible();
+    expect(readActiveAttempt('single', 'public-token')).toBeNull();
+  });
+
+  it('stops a recovered page when another tab removes the active attempt', async () => {
+    writeActiveAttempt({
+      kind: 'single', challengeToken: 'public-token', attemptToken: 'shared-attempt',
+      startedAt: Math.floor(Date.now() / 1000) - 10, expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+    mocks.post.mockResolvedValueOnce({ ...opened, session: { state: 'started' } });
+    render(<ChallengeView token="public-token" />);
+    await screen.findByRole('heading', { name: '上次挑战还没有完成' });
+
+    removeActiveAttempt('single', 'public-token');
+
+    expect(await screen.findByRole('heading', { name: '本轮挑战已结束' })).toBeVisible();
+    expect(screen.getByText(/其他页面完成或失效/)).toBeVisible();
+    expect(mocks.demo.closeCamera).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a stale group tab without deleting a replacement participant attempt', async () => {
+    writeActiveAttempt({
+      kind: 'group', challengeToken: 'group-token', attemptToken: 'old-attempt', attemptId: 'old-id',
+      nickname: '旧参与者', startedAt: Math.floor(Date.now() / 1000) - 10,
+      expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+    mocks.post.mockResolvedValueOnce({
+      challenge: { ...opened.challenge, kind: 'group-invitation', mode: 'group' },
+      group: { ...opened.challenge, kind: 'group-invitation', mode: 'group', state: 'active' },
+      playback, stats: opened.stats, session: null,
+    });
+    render(<ChallengeView token="group-token" group />);
+    await screen.findByRole('heading', { name: '上次挑战还没有完成' });
+
+    writeActiveAttempt({
+      kind: 'group', challengeToken: 'group-token', attemptToken: 'new-attempt', attemptId: 'new-id',
+      nickname: '新参与者', startedAt: Math.floor(Date.now() / 1000),
+      expiresAt: Math.floor(Date.now() / 1000) + 3_600,
+    });
+
+    expect(await screen.findByRole('heading', { name: '本轮挑战已结束' })).toBeVisible();
+    expect(readActiveAttempt('group', 'group-token')).toMatchObject({
+      attemptToken: 'new-attempt',
+      attemptId: 'new-id',
+    });
   });
 
   it('restores the private settlement after a refresh in the same tab', async () => {

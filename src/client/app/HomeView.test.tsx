@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { HomeView } from './HomeView';
+import { readCreatedChallenges } from '../storage/createdChallenges';
 
 const mocks=vi.hoisted(()=>({apiRequest:vi.fn(),post:vi.fn()}));
 vi.mock('../api/client',()=>({apiRequest:mocks.apiRequest,post:mocks.post}));
@@ -11,7 +12,7 @@ const parsed={video:{...entry.video,media:['https://cdn/video.mp4']},videoTicket
 
 describe('HomeView',()=>{
   afterEach(cleanup);
-  beforeEach(()=>{mocks.apiRequest.mockReset();mocks.post.mockReset();sessionStorage.clear();});
+  beforeEach(()=>{mocks.apiRequest.mockReset();mocks.post.mockReset();sessionStorage.clear();localStorage.clear();});
   it('loads the leaderboard lazily and preserves composer fields across accessible tab switches',async()=>{
     mocks.apiRequest.mockResolvedValue({entries:[entry]});
     render(<HomeView navigate={vi.fn()}/>);
@@ -23,6 +24,20 @@ describe('HomeView',()=>{
     expect(screen.getByRole('tabpanel',{name:'难绷排行'})).toBeVisible();
     fireEvent.click(screen.getByRole('tab',{name:'制作挑战'}));
     expect(screen.getByLabelText('B站视频链接')).toHaveValue('BV-user-draft');
+  });
+
+  it('cycles through all three tabs with arrow keys', () => {
+    render(<HomeView navigate={vi.fn()}/>);
+    const compose = screen.getByRole('tab', { name: '制作挑战' });
+    compose.focus();
+    fireEvent.keyDown(compose, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '我的挑战' })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('tab', { name: '我的挑战' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '难绷排行' })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('tab', { name: '难绷排行' }), { key: 'ArrowRight' });
+    expect(compose).toHaveFocus();
+    fireEvent.keyDown(compose, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: '难绷排行' })).toHaveFocus();
   });
 
   it('offers retry and both actions without document navigation',async()=>{
@@ -39,10 +54,11 @@ describe('HomeView',()=>{
     await waitFor(()=>expect(screen.getByLabelText('B站视频链接')).toHaveValue(`https://www.bilibili.com/video/${entry.video.bvid}`));
     expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('tab',{name:'难绷排行'}));
-    mocks.post.mockResolvedValueOnce(parsed).mockResolvedValueOnce({challengeUrl:'https://example.com/c/self-token'});
+    mocks.post.mockResolvedValueOnce(parsed).mockResolvedValueOnce({challengeUrl:'https://example.com/c/self-token',manageUrl:'https://example.com/manage#m=self-private',expiresAt:Math.floor(Date.now()/1000)+3600});
     fireEvent.click(screen.getByRole('button',{name:'我来挑战'}));
     await waitFor(()=>expect(navigate).toHaveBeenCalledWith('/c/self-token'));
     expect(mocks.post).toHaveBeenLastCalledWith('/api/challenges',{videoTicket:'bv1.ticket',mode:'self'});
+    expect(readCreatedChallenges()).toEqual([expect.objectContaining({kind:'self',challengeUrl:'https://example.com/c/self-token'})]);
   });
 
   it('automatically parses a video forwarded from settlement', async () => {

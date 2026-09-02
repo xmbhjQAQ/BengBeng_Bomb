@@ -9,6 +9,8 @@ import { copyText } from './copyText';
 import { shareImageFile } from './shareImage';
 import { normalizeGroupCreated } from './groupTypes';
 import { readSession, removeSession } from '../storage/session';
+import { upsertCreatedChallenge } from '../storage/createdChallenges';
+import { readPreferredNickname, rememberPreferredNickname } from '../storage/preferredNickname';
 
 export interface ParsedVideo {
   video: PlaybackData;
@@ -31,7 +33,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
   const [input, setInput] = useState(readSession('forward-video') || '');
   const [parsed, setParsed] = useState<ParsedVideo | null>(prefill ?? null);
   const [created, setCreated] = useState<Created | null>(null);
-  const [initiator, setInitiator] = useState('');
+  const [initiator, setInitiator] = useState(readPreferredNickname);
   const [recipient, setRecipient] = useState('');
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'classic' | 'group'>('classic');
@@ -86,7 +88,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
         }));
         const entryUrl = response.entryUrl || response.invitationUrl;
         if (!entryUrl || !response.resultUrl) throw new Error('群组挑战链接生成失败');
-        setCreated({
+        const nextCreated: Created = {
           challengeUrl: entryUrl,
           entryUrl,
           resultUrl: response.resultUrl,
@@ -94,9 +96,23 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
           expiresAt: response.expiresAt || 0,
           resultExpiresAt: response.resultExpiresAt,
           group: true,
+        };
+        setCreated(nextCreated);
+        rememberPreferredNickname(initiator);
+        upsertCreatedChallenge({
+          kind: 'group',
+          video: parsed.video,
+          createdAt: Math.floor(Date.now() / 1000),
+          expiresAt: nextCreated.expiresAt,
+          challengeUrl: nextCreated.challengeUrl,
+          entryUrl: nextCreated.entryUrl,
+          resultUrl: nextCreated.resultUrl,
+          resultExpiresAt: nextCreated.resultExpiresAt,
+          manageUrl: nextCreated.manageUrl,
+          initiator,
         });
       } else {
-        setCreated({
+        const nextCreated: Created = {
           ...await post<Created>('/api/challenges', {
             videoTicket: parsed.videoTicket,
             initiator,
@@ -105,6 +121,17 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
             mode: 'classic',
           }),
           group: false,
+        };
+        setCreated(nextCreated);
+        rememberPreferredNickname(initiator);
+        upsertCreatedChallenge({
+          kind: 'classic',
+          video: parsed.video,
+          createdAt: Math.floor(Date.now() / 1000),
+          expiresAt: nextCreated.expiresAt,
+          challengeUrl: nextCreated.challengeUrl,
+          manageUrl: nextCreated.manageUrl,
+          initiator,
         });
       }
       removeSession('forward-video');
@@ -245,7 +272,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
         <button type="button" role="radio" aria-checked={mode === 'group'} className={mode === 'group' ? 'active' : ''} onClick={() => { setMode('group'); setCreated(null); }}>群组挑战</button>
       </div>
       <p className="hint">{mode === 'group' ? '发到群里，大家各自挑战，结果会按昵称展示。' : '发给一位朋友，记录这一次挑战结果。'}</p>
-      <label>{mode === 'group' ? '发起者昵称' : '你的昵称'} <input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={initiator} onChange={(event) => setInitiator(event.target.value)} /><small>{initiator.length}/{CLIENT_CONFIG.limits.nickname}</small></label>
+      <label>{mode === 'group' ? '发起者昵称' : '你的昵称'} <input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={initiator} onChange={(event) => setInitiator(event.target.value)} onBlur={() => rememberPreferredNickname(initiator)} /><small>{initiator.length}/{CLIENT_CONFIG.limits.nickname}</small></label>
       {mode === 'classic' && <label>挑战对象（可选）<input className="field" maxLength={CLIENT_CONFIG.limits.recipient} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>}
       <label>短留言（可选）<textarea className="field" maxLength={CLIENT_CONFIG.limits.message} value={message} onChange={(event) => setMessage(event.target.value)} /><small>{message.length}/{CLIENT_CONFIG.limits.message}</small></label>
       <button disabled={busy || !initiator.trim()} onClick={() => void create()}>生成挑战</button>

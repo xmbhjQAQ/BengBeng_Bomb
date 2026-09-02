@@ -1,0 +1,4 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit that restored client credentials still obey the server attempt state and cannot create duplicate statistics."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check SPA continuity, accessible three-tab navigation, storage failure fallback, privacy boundaries and regression coverage."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Confirm no endpoint, D1 lifecycle, capability or aggregate contract was weakened by client-side recovery."}
+{"file":".trellis/tasks/09-02-local-challenge-history-recovery/research/existing-storage-and-lifecycle.md","reason":"Use the recorded current keys and lifecycle behavior as the regression baseline for implementation review."}

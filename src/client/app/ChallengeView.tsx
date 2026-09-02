@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { post } from '../api/client';
+import { ApiClientError, post } from '../api/client';
 import { decodeScoreTrace, isRecord, type AggregateStats, type PlaybackData, type ScorePoint } from '../../shared/contracts';
 import { CLIENT_CONFIG } from '../../shared/config/client';
 import { useSmileDemo } from '../gameplay/app/useSmileDemo';
@@ -10,6 +10,13 @@ import { Settlement } from './Settlement';
 import { RECIPIENT_STEPS, recipientStage, type RecipientStage } from './recipientFlow';
 import { normalizeGroupComplete, normalizeGroupOpen, type ChallengeDisplayPayload, type GroupCompleted } from './groupTypes';
 import { readSession, removeSession, writeSession } from '../storage/session';
+import {
+  readActiveAttempt,
+  removeActiveAttempt,
+  subscribeActiveAttempts,
+  writeActiveAttempt,
+} from '../storage/activeAttempts';
+import { readPreferredNickname, rememberPreferredNickname } from '../storage/preferredNickname';
 
 interface Opened {
   challenge: ChallengeDisplayPayload;
@@ -31,6 +38,12 @@ interface Completed {
 }
 
 type Submission = { status: 'idle' | 'submitting' | 'error'; error: string };
+
+interface AttemptState {
+  attemptToken: string;
+  attemptId: string;
+  source: 'none' | 'persistent' | 'legacy';
+}
 
 const attemptKey = (token: string, group = false) => `${group ? 'bengbeng-group-attempt' : 'bengbeng-attempt'}:${token}`;
 const groupAttemptIdKey = (token: string) => `bengbeng-group-attempt-id:${token}`;
@@ -74,23 +87,75 @@ function readCachedCompleted(token: string, durationSeconds: number): Completed 
 
 const clearCachedCompleted = (token: string) => removeSession(completedKey(token));
 
+function initialAttemptState(token: string, group: boolean): AttemptState {
+  const kind = group ? 'group' : 'single';
+  const active = readActiveAttempt(kind, token);
+  if (active) {
+    return {
+      attemptToken: active.attemptToken,
+      attemptId: active.kind === 'group' ? active.attemptId : '',
+      source: 'persistent',
+    };
+  }
+  const legacyAttempt = readSession(attemptKey(token, group)) || '';
+  const legacyAttemptId = group ? readSession(groupAttemptIdKey(token)) || '' : '';
+  // A group completion needs both values.  Never migrate or reuse a partial
+  // legacy record because an invented/missing attempt id cannot be authorized.
+  if (legacyAttempt && (!group || legacyAttemptId)) {
+    return { attemptToken: legacyAttempt, attemptId: legacyAttemptId, source: 'legacy' };
+  }
+  if (group && (legacyAttempt || legacyAttemptId)) {
+    removeSession(attemptKey(token, true));
+    removeSession(groupAttemptIdKey(token));
+  }
+  return { attemptToken: '', attemptId: '', source: 'none' };
+}
+
+function isTerminalAttemptError(error: unknown, group: boolean): boolean {
+  if (!(error instanceof ApiClientError)) return false;
+  const common = ['NOT_FOUND', 'TOKEN_EXPIRED'] as const;
+  const single = ['INVALID_TOKEN', 'INVALID_ATTEMPT'] as const;
+  const grouped = ['INVALID_GROUP_TOKEN', 'INVALID_GROUP_ATTEMPT', 'GROUP_NOT_FOUND', 'GROUP_ENDED', 'GROUP_EXPIRED'] as const;
+  return [...common, ...(group ? grouped : single)].includes(error.code as never);
+}
+
 export function ChallengeView({ token, group = false }: { token: string; group?: boolean }) {
   const demo = useSmileDemo();
   const [opened, setOpened] = useState<Opened | null>(null);
-  const [attempt, setAttempt] = useState(() => readSession(attemptKey(token, group)) || '');
-  const [groupAttemptId, setGroupAttemptId] = useState(() => group ? readSession(groupAttemptIdKey(token)) || '' : '');
+  const [attemptState, setAttemptState] = useState(() => initialAttemptState(token, group));
   const [completed, setCompleted] = useState<Completed | null>(null);
   const [openError, setOpenError] = useState('');
   const [startError, setStartError] = useState('');
-  const [nickname, setNickname] = useState('');
+  const [nickname, setNickname] = useState(() => {
+    const active = group ? readActiveAttempt('group', token) : null;
+    return active?.kind === 'group' ? active.nickname ?? readPreferredNickname() : readPreferredNickname();
+  });
   const [nicknameError, setNicknameError] = useState('');
+  const [recoveryPending, setRecoveryPending] = useState(false);
+  const [attemptUnavailable, setAttemptUnavailable] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [submission, setSubmission] = useState<Submission>({ status: 'idle', error: '' });
   const loaded = useRef(false);
   const submitting = useRef(false);
+  const clearingAttempt = useRef(false);
   const localResult = demo.result;
   const closeCamera = demo.closeCamera;
+  const attempt = attemptState.attemptToken;
+  const groupAttemptId = attemptState.attemptId;
+  const attemptKind = group ? 'group' : 'single';
+
+  const clearAttempt = useCallback(() => {
+    clearingAttempt.current = true;
+    // Only remove the credential this component actually owns. With no local
+    // bearer, another tab may have started a newer group participation after
+    // this component mounted and that record must remain recoverable.
+    if (attempt) removeActiveAttempt(attemptKind, token, attempt);
+    removeSession(attemptKey(token, group));
+    if (group) removeSession(groupAttemptIdKey(token));
+    setAttemptState({ attemptToken: '', attemptId: '', source: 'none' });
+    queueMicrotask(() => { clearingAttempt.current = false; });
+  }, [attempt, attemptKind, group, token]);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -98,7 +163,10 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
     void post<unknown>(group ? '/api/groups/open' : '/api/challenges/open', group ? { groupToken: token } : { challengeToken: token })
       .then((raw) => {
         const value = group ? normalizeGroupOpen(raw) : raw as Opened;
+        const groupState = group ? (value as ReturnType<typeof normalizeGroupOpen>).group?.state : undefined;
+        const groupCanRecover = groupState !== 'ended' && groupState !== 'expired';
         if (value.session?.state === 'completed') {
+          clearAttempt();
           const expiresAt = value.session.result_expires_at;
           const resultIsCurrent = expiresAt === undefined || (typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000));
           const cached = !group && resultIsCurrent ? readCachedCompleted(token, value.challenge.video.duration) : null;
@@ -107,11 +175,55 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
         } else {
           if (!group) clearCachedCompleted(token);
         }
+        if (group && !groupCanRecover) {
+          clearAttempt();
+        } else if (!group && value.session?.state === 'opened' && attemptState.attemptToken) {
+          // D1 is authoritative. A local bearer cannot be reused when the
+          // server says this challenge has never been claimed.
+          clearAttempt();
+        } else if (attemptState.attemptToken && (group || value.session?.state === 'started')) {
+          const migrated = attemptState.source === 'legacy' && writeActiveAttempt(group
+              ? {
+                  kind: 'group',
+                  challengeToken: token,
+                  attemptToken: attemptState.attemptToken,
+                  attemptId: attemptState.attemptId,
+                  ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
+                  startedAt: Math.floor(Date.now() / 1000),
+                  expiresAt: value.challenge.expiresAt,
+                }
+              : {
+                  kind: 'single',
+                  challengeToken: token,
+                  attemptToken: attemptState.attemptToken,
+                  startedAt: Math.floor(Date.now() / 1000),
+                  expiresAt: value.challenge.expiresAt,
+                });
+          if (migrated) {
+            setAttemptState((current) => ({ ...current, source: 'persistent' }));
+          }
+          setRecoveryPending(true);
+        }
         setOpened(value);
         demo.selectResolvedBilibili(value.playback);
       })
-      .catch((error) => setOpenError(error instanceof Error ? error.message : '挑战加载失败'));
-  }, [demo, group, token]);
+      .catch((error) => {
+        if (isTerminalAttemptError(error, group)) clearAttempt();
+        setOpenError(error instanceof Error ? error.message : '挑战加载失败');
+      });
+  }, [attemptState.attemptId, attemptState.attemptToken, attemptState.source, clearAttempt, demo, group, nickname, token]);
+
+  useEffect(() => subscribeActiveAttempts(() => {
+    if (clearingAttempt.current || !attempt) return;
+    const active = readActiveAttempt(attemptKind, token);
+    if (active?.attemptToken === attempt) return;
+    removeSession(attemptKey(token, group));
+    if (group) removeSession(groupAttemptIdKey(token));
+    setAttemptState({ attemptToken: '', attemptId: '', source: 'none' });
+    setRecoveryPending(false);
+    setAttemptUnavailable('这轮挑战可能已在其他页面完成或失效，请重新打开链接查看最新状态。');
+    closeCamera();
+  }), [attempt, attemptKind, closeCamera, group, token]);
 
   const submitResult = useCallback(async () => {
     if (!localResult || !attempt || submitting.current) return;
@@ -131,8 +243,7 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
       const value: Completed = group
         ? (() => { const result = normalizeGroupComplete(raw); return { ...result, resultUrl: result.resultUrl || undefined, groupParticipants: result.participants, groupNextCursor: result.nextCursor, groupTotal: result.total, scoreTrace: localResult.scoreTrace }; })()
         : { ...(raw as Completed), scoreTrace: localResult.scoreTrace };
-      removeSession(attemptKey(token, group));
-      if (group) removeSession(groupAttemptIdKey(token));
+      clearAttempt();
       const completedValue = value;
       setCompleted(completedValue);
       if (!group) {
@@ -142,20 +253,26 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
       void document.exitFullscreen?.().catch(() => undefined);
     } catch (error) {
       submitting.current = false;
+      if (isTerminalAttemptError(error, group)) {
+        clearAttempt();
+        setAttemptUnavailable(error instanceof Error ? error.message : '本轮挑战已经失效，请重新打开挑战链接。');
+        setSubmission({ status: 'idle', error: '' });
+        return;
+      }
       setSubmission({
         status: 'error',
         error: error instanceof Error ? error.message : '结果提交失败',
       });
     }
-  }, [attempt, closeCamera, group, groupAttemptId, localResult, token]);
+  }, [attempt, clearAttempt, closeCamera, group, groupAttemptId, localResult, token]);
 
   useEffect(() => {
     if (localResult) void submitResult();
   }, [localResult, submitResult]);
 
   const start = async () => {
-    if (!demo.canStart || starting) return;
-    if (group && !nickname.trim()) {
+    if (!opened || !demo.canStart || starting) return;
+    if (group && !attempt && !nickname.trim()) {
       setNicknameError('请先填写昵称，再开始挑战。');
       return;
     }
@@ -164,18 +281,31 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
     setNicknameError('');
     try {
       let currentAttempt = attempt;
+      let currentAttemptId = groupAttemptId;
       if (!currentAttempt) {
         const value = await post<{ attemptToken: string; attemptId?: string }>(group ? '/api/groups/start' : '/api/challenges/start', group
           ? { groupToken: token, nickname: nickname.trim() }
           : { challengeToken: token });
         currentAttempt = value.attemptToken;
+        currentAttemptId = value.attemptId ?? '';
+        if (group && !currentAttemptId) throw new Error('本轮挑战信息不完整，请重新进入挑战。');
+        const persisted = writeActiveAttempt(group
+          ? {
+              kind: 'group', challengeToken: token, attemptToken: currentAttempt,
+              attemptId: currentAttemptId, nickname: nickname.trim(),
+              startedAt: Math.floor(Date.now() / 1000), expiresAt: opened.challenge.expiresAt,
+            }
+          : {
+              kind: 'single', challengeToken: token, attemptToken: currentAttempt,
+              startedAt: Math.floor(Date.now() / 1000), expiresAt: opened.challenge.expiresAt,
+            });
         writeSession(attemptKey(token, group), currentAttempt);
-        setAttempt(currentAttempt);
-        if (group && value.attemptId) {
-          writeSession(groupAttemptIdKey(token), value.attemptId);
-          setGroupAttemptId(value.attemptId);
+        if (group) {
+          writeSession(groupAttemptIdKey(token), currentAttemptId);
         }
+        setAttemptState({ attemptToken: currentAttempt, attemptId: currentAttemptId, source: persisted ? 'persistent' : 'legacy' });
       }
+      if (group) rememberPreferredNickname(nickname);
       try {
         await document.documentElement.requestFullscreen?.();
       } catch {
@@ -191,11 +321,30 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
 
   if (openError && !opened) return <Message title="挑战无法打开" detail={openError} />;
   if (!opened) return <Message title="正在拆弹…" detail="正在准备挑战视频，请稍候。" />;
+  if (attemptUnavailable) return <Message title="本轮挑战已结束" detail={attemptUnavailable} />;
   if (opened.session?.state === 'completed' && !completed) {
     return <Message title="这枚炸弹已经引爆过了" detail="这次挑战已经完成，每个挑战只能记录一次结果。请回到发起者保存的结果入口查看详情。" />;
   }
-  if (opened.session?.state === 'started' && !attempt) {
+  if (opened.session?.state === 'started' && !attempt && !completed) {
     return <Message title="挑战已经开始" detail="这次挑战已经在别处开始，请从原来的页面继续。" />;
+  }
+  if (recoveryPending) {
+    return (
+      <main className="page challenge-page">
+        <header className="hero compact">
+          <p className="eyebrow">继续挑战</p>
+          <h1>上次挑战还没有完成</h1>
+          <p className="intro">本机保存了这轮挑战资格，你可以从头重新挑战。</p>
+        </header>
+        <section className="section invalid-panel" aria-labelledby="challenge-recovery-title">
+          <p className="step">恢复挑战</p>
+          <h2 id="challenge-recovery-title">重新校准后再出发</h2>
+          <p>摄像头画面、校准信息和上次进度都没有保存。继续后会重新校准，并从视频开头开始，不会创建新的挑战记录。</p>
+          {group && nickname && <p>本轮仍使用昵称“{nickname}”。</p>}
+          <button type="button" onClick={() => setRecoveryPending(false)}>重新开始本轮</button>
+        </section>
+      </main>
+    );
   }
 
   const stage = recipientStage({
@@ -282,7 +431,8 @@ export function ChallengeView({ token, group = false }: { token: string; group?:
                 <h2>校准成功，最后确认一下</h2>
                 <p>调整音量和坐姿。点击“开始挑战”后才正式计时。</p>
                 <VideoIntro video={opened.challenge.video} />
-                {group && <label className="group-nickname-field">你的昵称<input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={nickname} onChange={(event) => { setNickname(event.target.value); setNicknameError(''); }} placeholder="例如：小明" autoComplete="nickname" /><small>{nickname.length}/{CLIENT_CONFIG.limits.nickname}</small>{nicknameError && <span className="error" role="alert">{nicknameError}</span>}</label>}
+                {group && attempt && !nickname && <p className="hint">恢复后会沿用本轮开始时填写的昵称。</p>}
+                {group && (!attempt || nickname) && <label className="group-nickname-field">你的昵称<input className="field" maxLength={CLIENT_CONFIG.limits.nickname} value={nickname} onChange={(event) => { setNickname(event.target.value); setNicknameError(''); }} onBlur={() => rememberPreferredNickname(nickname)} placeholder="例如：小明" autoComplete="nickname" disabled={Boolean(attempt)} /><small>{attempt ? '恢复挑战会沿用本轮昵称' : `${nickname.length}/${CLIENT_CONFIG.limits.nickname}`}</small>{nicknameError && <span className="error" role="alert">{nicknameError}</span>}</label>}
               </section>
             )}
             <CameraPanel key="camera" {...cameraProps} compact={stage === 'ready'} bubble={stage === 'active'} />

@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import type { LeaderboardEntry } from '../../shared/contracts';
 import { apiRequest, post } from '../api/client';
 import { ComposerView, type ParsedVideo } from './ComposerView';
+import { MyChallengesView } from './MyChallengesView';
+import { upsertCreatedChallenge } from '../storage/createdChallenges';
 
-type HomeTab = 'compose' | 'leaderboard';
-interface CreatedChallenge { challengeUrl: string }
+const HOME_TABS = ['compose', 'history', 'leaderboard'] as const;
+type HomeTab = typeof HOME_TABS[number];
+interface CreatedChallenge { challengeUrl: string; manageUrl: string; expiresAt: number }
 
 export function HomeView({ navigate }: { navigate(path: string): void }) {
   const [tab, setTab] = useState<HomeTab>('compose');
@@ -33,6 +36,14 @@ export function HomeView({ navigate }: { navigate(path: string): void }) {
     try {
       const parsed = await resolve(entry);
       const created = await post<CreatedChallenge>('/api/challenges', { videoTicket: parsed.videoTicket, mode: 'self' });
+      upsertCreatedChallenge({
+        kind: 'self',
+        video: parsed.video,
+        createdAt: Math.floor(Date.now() / 1000),
+        expiresAt: created.expiresAt,
+        challengeUrl: created.challengeUrl,
+        manageUrl: created.manageUrl,
+      });
       const path = new URL(created.challengeUrl, location.origin).pathname;
       navigate(path);
     } catch (reason) { setError(reason instanceof Error ? reason.message : '单人挑战创建失败，请稍后重试'); }
@@ -41,12 +52,14 @@ export function HomeView({ navigate }: { navigate(path: string): void }) {
 
   return <main className="page home-page">
     <header className="hero home-hero"><p className="eyebrow">BENG BENG BOMB</p><h1>绷绷炸弹</h1><p className="intro">挑一段 B 站视频，看看朋友能绷到第几秒。</p>
-      <div className="home-tabs" role="tablist" aria-label="首页功能" onKeyDown={(event)=>{if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;event.preventDefault();const next=tab==='compose'?'leaderboard':'compose';setTab(next);event.currentTarget.querySelector<HTMLButtonElement>(`#tab-${next}`)?.focus();}}>
+      <div className="home-tabs" role="tablist" aria-label="首页功能" onKeyDown={(event)=>{if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;event.preventDefault();const current=HOME_TABS.indexOf(tab);const offset=event.key==='ArrowRight'?1:-1;const next=HOME_TABS[(current+offset+HOME_TABS.length)%HOME_TABS.length]!;setTab(next);event.currentTarget.querySelector<HTMLButtonElement>(`#tab-${next}`)?.focus();}}>
         <button role="tab" id="tab-compose" tabIndex={tab==='compose'?0:-1} aria-selected={tab==='compose'} aria-controls="panel-compose" className={tab==='compose'?'active':''} onClick={()=>setTab('compose')}>制作挑战</button>
+        <button role="tab" id="tab-history" tabIndex={tab==='history'?0:-1} aria-selected={tab==='history'} aria-controls="panel-history" className={tab==='history'?'active':''} onClick={()=>setTab('history')}>我的挑战</button>
         <button role="tab" id="tab-leaderboard" tabIndex={tab==='leaderboard'?0:-1} aria-selected={tab==='leaderboard'} aria-controls="panel-leaderboard" className={tab==='leaderboard'?'active':''} onClick={()=>setTab('leaderboard')}>难绷排行</button>
       </div>
     </header>
     <section id="panel-compose" role="tabpanel" aria-labelledby="tab-compose" hidden={tab!=='compose'} className="home-panel"><ComposerView embedded prefill={prefill}/></section>
+    <section id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden={tab!=='history'} className="home-panel my-challenges-panel"><MyChallengesView navigate={navigate}/></section>
     <section id="panel-leaderboard" role="tabpanel" aria-labelledby="tab-leaderboard" hidden={tab!=='leaderboard'} className="home-panel leaderboard-panel">
       <div className="leaderboard-heading"><div><p className="step">永久累计 · 大家记录</p><h2>难绷排行榜</h2></div><p>综合大家的坚持时间和没绷住的比例，看看哪些视频最容易让人破防。</p></div>
       {entries===null&&!error&&<p className="leaderboard-state" role="status">正在加载难绷排行…</p>}

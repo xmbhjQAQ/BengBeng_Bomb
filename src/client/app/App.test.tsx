@@ -2,10 +2,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 
-vi.mock('./HomeView',()=>({HomeView:({navigate}:{navigate(path:string):void})=><button onClick={()=>navigate('/c/self-token')}>open-self</button>}));
+vi.mock('./HomeView',()=>({HomeView:({navigate}:{navigate(path:string):void})=><><button onClick={()=>navigate('/c/self-token')}>open-self</button><button onClick={()=>navigate('/manage#m=private-token&c=challenge-token')}>open-manage</button></>}));
 vi.mock('./ChallengeView',()=>({ChallengeView:({token}:{token:string})=><div>challenge:{token}</div>}));
 vi.mock('./ReportView',()=>({ReportView:()=>null}));
-vi.mock('./ManageView',()=>({ManageView:()=>null}));
+vi.mock('./ManageView',()=>({ManageView:()=><div>manage-view</div>}));
 
 describe('App SPA navigation',()=>{
   afterEach(()=>{cleanup();history.replaceState({},'', '/');});
@@ -21,6 +21,14 @@ describe('App SPA navigation',()=>{
     history.replaceState({},'', '/');
     fireEvent.popState(window);
     expect(screen.getByRole('button',{name:'open-self'})).toBeVisible();
+  });
+  it('keeps a fragment capability while routing by pathname',()=>{
+    history.replaceState({},'', '/');
+    render(<App/>);
+    fireEvent.click(screen.getByRole('button',{name:'open-manage'}));
+    expect(window.location.pathname).toBe('/manage');
+    expect(window.location.hash).toBe('#m=private-token&c=challenge-token');
+    expect(screen.getByText('manage-view')).toBeVisible();
   });
   it('shows a recovery page for a malformed encoded token instead of throwing',()=>{
     history.replaceState({},'', '/c/%E0%A4%A');

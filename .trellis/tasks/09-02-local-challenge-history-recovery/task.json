@@ -1,0 +1,31 @@
+{
+  "id": "local-challenge-history-recovery",
+  "name": "local-challenge-history-recovery",
+  "title": "本地挑战记录、昵称记忆与意外退出恢复",
+  "description": "设计本地挑战记录、昵称记忆与意外退出后的安全恢复机制。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "frontend browser persistence, homepage history UI, challenge attempt recovery",
+  "package": "client",
+  "priority": "P2",
+  "creator": "xmbhjQAQ",
+  "assignee": "xmbhjQAQ",
+  "createdAt": "2026-09-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/client/storage/session.ts",
+    "src/client/app/HomeView.tsx",
+    "src/client/app/ComposerView.tsx",
+    "src/client/app/ChallengeView.tsx"
+  ],
+  "notes": "",
+  "meta": {}
+}
