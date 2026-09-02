@@ -93,3 +93,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: 本地挑战记录与意外退出恢复
+
+**Date**: 2026-09-02
+**Task**: 本地挑战记录与意外退出恢复
+**Branch**: `main`
+
+### Summary
+
+完成本地挑战历史、昵称记忆和单人/群组活动凭证恢复；通过前端与 Worker 全量检查、移动/桌面浏览器烟测，并上传至 origin/main。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c33153` | (see git log) |
+
+### Status
+
+[OK] **Completed**
