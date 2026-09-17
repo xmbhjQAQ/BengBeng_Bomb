@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,10 +12,8 @@ describe('HTTP security headers', () => {
     expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
     const policy = response.headers.get('Content-Security-Policy') || '';
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval'");
-    expect(policy).toContain("'sha256-93xNr/MlEvYlP8zOTmO8OBWTETRYkVg3e0itq85nxGQ='");
-    expect(policy).toContain('https://www.clarity.ms');
-    expect(policy).toContain('https://scripts.clarity.ms');
-    expect(policy).toContain('https://static.cloudflareinsights.com');
+    expect(policy).not.toContain('clarity.ms');
+    expect(policy).not.toContain('static.cloudflareinsights.com');
     const scriptSource = policy.match(/script-src [^;]+/)?.[0] || '';
     expect(scriptSource).not.toContain("'unsafe-inline'");
     expect(response.headers.get('Permissions-Policy')).toContain('camera=(self)');
@@ -28,18 +25,15 @@ describe('HTTP security headers', () => {
     expect(json({ ok: true }).headers.get('Cache-Control')).toBe('no-store');
   });
 
-  it('keeps the Clarity CSP hash synchronized with the HTML bootstrap', () => {
+  it('keeps analytics scripts out of capability-bearing pages', () => {
     const html = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
-    const bootstrap = html.match(/<script type="text\/javascript">([\s\S]*?)<\/script>/)?.[1];
-    expect(bootstrap).toBeTruthy();
-    const hash = createHash('sha256').update(bootstrap || '', 'utf8').digest('base64');
+    expect(html).not.toContain('clarity.ms');
+    expect(html).not.toContain('cloudflareinsights.com');
     const response = secureAsset(new Response('<!doctype html>'));
-    expect(response.headers.get('Content-Security-Policy')).toContain(`'sha256-${hash}'`);
+    expect(response.headers.get('Content-Security-Policy')).not.toContain('https://');
 
     const pagesHeaders = readFileSync(join(process.cwd(), 'public', '_headers'), 'utf8');
-    expect(pagesHeaders).toContain(`'sha256-${hash}'`);
-    expect(pagesHeaders).toContain('https://www.clarity.ms');
-    expect(pagesHeaders).toContain('https://scripts.clarity.ms');
-    expect(pagesHeaders).toContain('https://static.cloudflareinsights.com');
+    expect(pagesHeaders).not.toContain('clarity.ms');
+    expect(pagesHeaders).not.toContain('static.cloudflareinsights.com');
   });
 });

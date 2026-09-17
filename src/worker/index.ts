@@ -1,5 +1,5 @@
 import { CLIENT_CONFIG } from '../shared/config/client';
-import { ContractError, decodeNickname, decodeOutcome, decodeScoreTrace, GROUP_RESULTS_DEFAULT_LIMIT, GROUP_RESULTS_MAX_LIMIT, isRecord, type ChallengePayload, type GroupEntryPayload, type GroupInvitationPayload, type GroupManagePayload, type GroupParticipantResult, type GroupResultPayload, type ManageResult, type ReportPayload } from '../shared/contracts';
+import { ContractError, decodeNickname, decodeOutcome, decodeScoreTrace, GROUP_RESULTS_DEFAULT_LIMIT, GROUP_RESULTS_MAX_LIMIT, isRecord, type ChallengePayload, type GroupEntryPayload, type GroupInvitationPayload, type GroupManagePayload, type GroupParticipantResult, type GroupResultPayload, type ManageResult, type ReportPayload, type VideoMetadata } from '../shared/contracts';
 import { fetchDanmaku, parseBilibiliInput, resolveBilibili, UpstreamError } from './bilibili/adapter';
 import { CapabilityError, challengeId, issueChallenge, issueGroupEntry, issueGroupInvitation, issueGroupManage, issueGroupResult, issueManage, issueReport, issueVideoTicket, readChallenge, readGroupEntry, readGroupInvitation, readGroupManage, readGroupResult, readManage, readReport, readVideoTicket } from './capabilities/tokens';
 import { randomToken, sha256 } from './capabilities/crypto';
@@ -12,31 +12,40 @@ import { checkRateLimit, type RateLimitKind } from './security/rateLimit';
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const videoKey = (bvid: string, cid: number) => `${bvid}:${cid}`;
 const publicOrigin = (request: Request, config: ReturnType<typeof readConfig>) => config.publicOrigin ?? new URL(request.url).origin;
+const compactCapabilityVideo = (video: VideoMetadata): VideoMetadata => ({
+  ...video,
+  // Descriptions are display-only and make signed QR URLs disproportionately
+  // large. Very long cover URLs are omitted instead of adding a database lookup.
+  description: '',
+  cover: video.cover.length <= 320 ? video.cover : '',
+});
+const SHAREABLE_URL_MAX_BYTES = 2_200;
+const shareableUrl = (value: string) => new TextEncoder().encode(value).byteLength <= SHAREABLE_URL_MAX_BYTES;
 const groupTokenFrom = (body: Record<string, unknown>, names: string[]) => {
   for (const name of names) if (typeof body[name] === 'string' && body[name]) return body[name] as string;
   return '';
 };
-const groupResultPayload = (payload: GroupInvitationPayload, resultExpiresAt: number, nonce = randomToken(12)): GroupResultPayload => ({
-  v: 1, kind: 'group-result', groupId: payload.groupId, video: payload.video,
+const groupResultPayload = (payload: GroupInvitationPayload, resultExpiresAt: number, nonce = payload.nonce): GroupResultPayload => ({
+  v: 1, kind: 'group-result', groupId: payload.groupId, video: compactCapabilityVideo(payload.video),
   createdAt: payload.createdAt, expiresAt: payload.expiresAt, resultExpiresAt, nonce,
 });
 const groupEntryPayload = (payload: GroupInvitationPayload): GroupEntryPayload => ({
-  v: 1, kind: 'group-entry', groupId: payload.groupId, video: payload.video,
+  v: 1, kind: 'group-entry', groupId: payload.groupId, video: compactCapabilityVideo(payload.video),
   createdAt: payload.createdAt, expiresAt: payload.expiresAt, resultExpiresAt: payload.resultExpiresAt,
-  nonce: randomToken(18), mode: 'group',
+  nonce: payload.nonce, mode: 'group',
   ...(payload.initiator ? { initiator: payload.initiator } : {}),
   ...(payload.message ? { message: payload.message } : {}),
 });
 const groupInvitationPayload = (payload: GroupEntryPayload): GroupInvitationPayload => ({
-  v: 1, kind: 'group-invitation', groupId: payload.groupId, video: payload.video,
+  v: 1, kind: 'group-invitation', groupId: payload.groupId, video: compactCapabilityVideo(payload.video),
   createdAt: payload.createdAt, expiresAt: payload.expiresAt, resultExpiresAt: payload.resultExpiresAt,
-  nonce: randomToken(18), mode: 'group',
+  nonce: payload.nonce, mode: 'group',
   ...(payload.initiator ? { initiator: payload.initiator } : {}),
   ...(payload.message ? { message: payload.message } : {}),
 });
 const groupManagePayload = (payload: GroupInvitationPayload, resultExpiresAt: number): GroupManagePayload => ({
-  v: 1, kind: 'group-manage', groupId: payload.groupId, video: payload.video,
-  createdAt: payload.createdAt, expiresAt: payload.expiresAt, resultExpiresAt, nonce: randomToken(12),
+  v: 1, kind: 'group-manage', groupId: payload.groupId, video: compactCapabilityVideo(payload.video),
+  createdAt: payload.createdAt, expiresAt: payload.expiresAt, resultExpiresAt, nonce: payload.nonce,
 });
 const groupResultExpiry = (payload: Pick<GroupInvitationPayload, 'expiresAt' | 'resultExpiresAt'> | Pick<GroupManagePayload, 'expiresAt' | 'resultExpiresAt'>) => payload.resultExpiresAt;
 const groupResultView = (row: GroupAttemptRow): GroupParticipantResult => ({
@@ -87,23 +96,26 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     if (mode === 'group') {
       const expiresAt = now + config.challengeTtlSeconds;
       const resultExpiresAt = expiresAt + config.resultTtlSeconds;
-      const groupPayload: GroupInvitationPayload = { v: 1, kind: 'group-invitation', groupId: randomToken(18), video: ticket.video, ...(initiator ? { initiator } : {}), ...(message ? { message } : {}), createdAt: now, expiresAt, resultExpiresAt, nonce: randomToken(18), mode: 'group' };
+      const groupPayload: GroupInvitationPayload = { v: 1, kind: 'group-invitation', groupId: randomToken(18), video: compactCapabilityVideo(ticket.video), ...(initiator ? { initiator } : {}), ...(message ? { message } : {}), createdAt: now, expiresAt, resultExpiresAt, nonce: randomToken(18), mode: 'group' };
       const challengeToken = await issueGroupInvitation(groupPayload, env.APP_SIGNING_SECRET);
       const entryToken = await issueGroupEntry(groupEntryPayload(groupPayload), env.APP_SIGNING_SECRET);
-      const resultToken = await issueGroupResult(groupResultPayload(groupPayload, resultExpiresAt, randomToken(18)), env.APP_SIGNING_SECRET);
+      const resultToken = await issueGroupResult(groupResultPayload(groupPayload, resultExpiresAt), env.APP_SIGNING_SECRET);
       const manageToken = await issueGroupManage(groupManagePayload(groupPayload, resultExpiresAt), env.APP_SIGNING_SECRET);
       const origin = publicOrigin(request, config);
       const invitationUrl = `${origin}/g/${encodeURIComponent(challengeToken)}`;
       const entryUrl = `${origin}/g/entry/${encodeURIComponent(entryToken)}`;
       const resultUrl = `${origin}/g/results/${encodeURIComponent(resultToken)}`;
       const manageUrl = `${origin}/manage#m=${encodeURIComponent(manageToken)}`;
+      if (![invitationUrl, entryUrl, resultUrl].every(shareableUrl)) return failure('SHARE_LINK_TOO_LONG','视频信息过长，暂时无法生成可扫码的分享链接',422);
       // Keep the legacy group `challengeUrl` pointed at the direct invitation;
       // new callers should use the explicit `entryUrl` for the one-QR share.
       return json({ mode, challengeToken, challengeUrl: invitationUrl, groupInvitationToken: challengeToken, groupInvitationUrl: invitationUrl, invitationUrl, entryToken, groupEntryToken: entryToken, entryUrl, groupEntryUrl: entryUrl, resultToken, groupResultToken: resultToken, groupResultUrl: resultUrl, resultUrl, manageToken, manageUrl, expiresAt, resultExpiresAt });
     }
-    const payload: ChallengePayload = { v:1, kind:'challenge', video:ticket.video, ...(mode === 'classic' ? {initiator,...(recipient?{recipient}:{}),...(message?{message}:{})} : {}), createdAt:now,expiresAt:now+config.challengeTtlSeconds,nonce:randomToken(18),mode };
+    const payload: ChallengePayload = { v:1, kind:'challenge', video:compactCapabilityVideo(ticket.video), ...(mode === 'classic' ? {initiator,...(recipient?{recipient}:{}),...(message?{message}:{})} : {}), createdAt:now,expiresAt:now+config.challengeTtlSeconds,nonce:randomToken(18),mode };
     const challengeToken = await issueChallenge(payload, env.APP_SIGNING_SECRET); const id = await challengeId(challengeToken); const manageToken = await issueManage(id, env.APP_SIGNING_SECRET); const origin = publicOrigin(request, config);
-    return json({ challengeToken, challengeUrl:`${origin}/c/${encodeURIComponent(challengeToken)}`, manageUrl:`${origin}/manage#m=${encodeURIComponent(manageToken)}&c=${encodeURIComponent(challengeToken)}`, expiresAt:payload.expiresAt });
+    const challengeUrl = `${origin}/c/${encodeURIComponent(challengeToken)}`;
+    if (!shareableUrl(challengeUrl)) return failure('SHARE_LINK_TOO_LONG','视频信息过长，暂时无法生成可扫码的分享链接',422);
+    return json({ challengeToken, challengeUrl, manageUrl:`${origin}/manage#m=${encodeURIComponent(manageToken)}&c=${encodeURIComponent(challengeToken)}`, expiresAt:payload.expiresAt });
   }
   if (url.pathname === '/api/groups/entry' && request.method === 'POST') {
     const body = await readJson(request);
@@ -115,6 +127,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const invitationPayload = groupInvitationPayload(payload);
     const resultToken = await issueGroupResult(groupResultPayload(invitationPayload, payload.resultExpiresAt), env.APP_SIGNING_SECRET);
     const resultUrl = `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`;
+    if (!shareableUrl(resultUrl)) return failure('SHARE_LINK_TOO_LONG','视频信息过长，暂时无法生成可扫码的结果链接',422);
     let group = await groupRepo.get(payload.groupId);
     // The first universal-entry visit is the lazy group open.  It creates one
     // parent row (never a participant row) so the visitor can choose to join;
@@ -135,15 +148,17 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const video = (await groupRepo.videoMetadata(key)) ?? payload.video;
     const state = group.state === 'ended' ? 'ended' as const : group.expires_at <= now ? 'expired' as const : 'active' as const;
     const canParticipate = state === 'active';
-    const resultPage = await groupRepo.resultsPage({ group, video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
+    const stats = await groupRepo.groupStats(payload.groupId, now);
+    const resultPage = await groupRepo.resultsPage({ group, video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT, summary: stats });
     const invitationToken = canParticipate ? await issueGroupInvitation(invitationPayload, env.APP_SIGNING_SECRET) : undefined;
     const invitationUrl = invitationToken ? `${publicOrigin(request, config)}/g/${encodeURIComponent(invitationToken)}` : undefined;
+    if (invitationUrl && !shareableUrl(invitationUrl)) return failure('SHARE_LINK_TOO_LONG','视频信息过长，暂时无法生成可扫码的参与链接',422);
     return json({
       entry: { state, video, createdAt: group.created_at, expiresAt: group.expires_at, resultExpiresAt: group.result_expires_at, canParticipate, ...(payload.initiator ? { initiator: payload.initiator } : {}), ...(payload.message ? { message: payload.message } : {}) },
       ...(invitationToken ? { invitationToken, groupInvitationToken: invitationToken, invitationUrl, groupInvitationUrl: invitationUrl } : {}),
       resultToken, groupResultToken: resultToken, resultUrl, groupResultUrl: resultUrl,
       resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total,
-      stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key),
+      stats, videoStats: await groupRepo.stats(key),
     });
   }
   if (url.pathname === '/api/groups/open' && request.method === 'POST') {
@@ -160,8 +175,9 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     if (group.state === 'ended') return failure('GROUP_ENDED', '这个群组挑战已经结束', 410);
     await groupRepo.upsertVideo(key, payload.video, now);
     const resultToken = await issueGroupResult(groupResultPayload(payload, resultExpiresAt), env.APP_SIGNING_SECRET);
-    const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
-    return json({ challenge: payload, group: { ...payload, state: group.state }, playback: { ...(await resolveBilibili(payload.video.bvid, payload.video.page, config, env.BILIDIRECT_API_KEY)), danmakuUrl: `/api/danmaku?group=${encodeURIComponent(token)}` }, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total, resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}` });
+    const stats = await groupRepo.groupStats(payload.groupId, now);
+    const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT, summary: stats });
+    return json({ challenge: payload, group: { ...payload, state: group.state }, playback: { ...(await resolveBilibili(payload.video.bvid, payload.video.page, config, env.BILIDIRECT_API_KEY)), danmakuUrl: `/api/danmaku?group=${encodeURIComponent(token)}` }, stats, videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total, resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}` });
   }
   if (url.pathname === '/api/groups/start' && request.method === 'POST') {
     const body = await readJson(request);
@@ -221,8 +237,9 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const row = completed.row ?? await groupRepo.getAttempt(attemptId);
     if (!row || row.state !== 'completed' || !row.outcome) return failure('GROUP_COMPLETE_CONFLICT', '结果提交冲突，请刷新后重试', 409);
     const resultToken = await issueGroupResult(groupResultPayload(payload, resultExpiresAt), env.APP_SIGNING_SECRET);
-    const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT });
-    return json({ outcome: row.outcome, elapsedSeconds: row.outcome === 'held' ? payload.video.duration : Number(row.failed_at_seconds ?? 0), result: groupResultView(row), resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, resultExpiresAt: group.result_expires_at, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total });
+    const stats = await groupRepo.groupStats(payload.groupId, now);
+    const resultPage = await groupRepo.resultsPage({ group, video: payload.video, now, limit: GROUP_RESULTS_DEFAULT_LIMIT, summary: stats });
+    return json({ outcome: row.outcome, elapsedSeconds: row.outcome === 'held' ? payload.video.duration : Number(row.failed_at_seconds ?? 0), result: groupResultView(row), resultToken, groupResultToken: resultToken, resultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, groupResultUrl: `${publicOrigin(request, config)}/g/results/${encodeURIComponent(resultToken)}`, resultExpiresAt: group.result_expires_at, stats, videoStats: await groupRepo.stats(key), resultPage, results: resultPage.results, resultSummary: resultPage.summary, total: resultPage.summary.total });
   }
   if (url.pathname === '/api/groups/results' && request.method === 'POST') {
     const body = await readJson(request);
@@ -240,8 +257,9 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
       return json({ resultPage: empty, ...empty, stats: { total: 0, held: 0, failed: 0, failureRate: 0, averageElapsedSeconds: 0, buckets: [] }, total: 0 });
     }
     if (group.video_key !== key || group.result_expires_at !== payload.resultExpiresAt) return failure('INVALID_GROUP_RESULT_TOKEN', '群组结果凭证无效');
-    const resultPage = await groupRepo.resultsPage({ group, video: (await groupRepo.videoMetadata(key)) ?? payload.video, now, limit, cursor });
-    return json({ resultPage, ...resultPage, stats: await groupRepo.groupStats(payload.groupId, now), videoStats: await groupRepo.stats(key), total: resultPage.summary.total });
+    const stats = await groupRepo.groupStats(payload.groupId, now);
+    const resultPage = await groupRepo.resultsPage({ group, video: (await groupRepo.videoMetadata(key)) ?? payload.video, now, limit, cursor, summary: stats });
+    return json({ resultPage, ...resultPage, stats, videoStats: await groupRepo.stats(key), total: resultPage.summary.total });
   }
   if (url.pathname === '/api/groups/manage' && (request.method === 'POST' || request.method === 'DELETE')) {
     const manageToken = bearer(request);
@@ -269,12 +287,14 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
   }
   if (url.pathname === '/api/challenges/open' && request.method === 'POST') {
     const body = await readJson(request); if (!isRecord(body) || typeof body.challengeToken !== 'string') return failure('INVALID_INPUT','缺少挑战凭证');
-    const payload = await readChallenge(body.challengeToken, env.APP_SIGNING_SECRET, now); const id=await challengeId(body.challengeToken); const playback=await resolveBilibili(payload.video.bvid,payload.video.page,config,env.BILIDIRECT_API_KEY);
-    const key=videoKey(payload.video.bvid,payload.video.cid); const session=await repo.open({id,videoKey:key,createdAt:payload.createdAt,expiresAt:payload.expiresAt,now,duration:payload.video.duration}); await repo.upsertVideo(key,payload.video,now);
+    const payload = await readChallenge(body.challengeToken, env.APP_SIGNING_SECRET, now); const id=await challengeId(body.challengeToken);
+    const key=videoKey(payload.video.bvid,payload.video.cid); const session=await repo.open({id,videoKey:key,createdAt:payload.createdAt,expiresAt:payload.expiresAt,now,duration:payload.video.duration});
+    if (session?.revoked_at != null) return failure('CHALLENGE_DELETED','这个挑战已经被删除',410);
+    const playback=await resolveBilibili(payload.video.bvid,payload.video.page,config,env.BILIDIRECT_API_KEY); await repo.upsertVideo(key,payload.video,now);
     return json({ challenge:payload, playback:{...playback,danmakuUrl:`/api/danmaku?challenge=${encodeURIComponent(body.challengeToken)}`}, session, stats:await repo.stats(videoKey(payload.video.bvid,payload.video.cid)) });
   }
   if (url.pathname === '/api/challenges/start' && request.method === 'POST') {
-    const body=await readJson(request); if(!isRecord(body)||typeof body.challengeToken!=='string') return failure('INVALID_INPUT','缺少挑战凭证'); await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); const attemptToken=randomToken(24); const claimed=await repo.start(id,await sha256(attemptToken),now); if(!claimed){const current=await repo.get(id);return failure(current?.state==='completed'?'ALREADY_COMPLETED':'ALREADY_STARTED',current?.state==='completed'?'挑战已完成':'挑战已经开始',409);} return json({attemptToken});
+    const body=await readJson(request); if(!isRecord(body)||typeof body.challengeToken!=='string') return failure('INVALID_INPUT','缺少挑战凭证'); await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); const attemptToken=randomToken(24); const claimed=await repo.start(id,await sha256(attemptToken),now); if(!claimed){const current=await repo.get(id);if(current?.revoked_at!=null)return failure('CHALLENGE_DELETED','这个挑战已经被删除',410);return failure(current?.state==='completed'?'ALREADY_COMPLETED':'ALREADY_STARTED',current?.state==='completed'?'挑战已完成':'挑战已经开始',409);} return json({attemptToken});
   }
   if (url.pathname === '/api/challenges/complete' && request.method === 'POST') {
     const body=await readJson(request,48_000); if(!isRecord(body)||typeof body.challengeToken!=='string'||typeof body.attemptToken!=='string') return failure('INVALID_INPUT','结果信息不完整'); const payload=await readChallenge(body.challengeToken,env.APP_SIGNING_SECRET,now); const id=await challengeId(body.challengeToken); if(!await repo.attemptMatches(id,await sha256(body.attemptToken))) return failure('INVALID_ATTEMPT','本轮挑战凭证无效',403); const scoreTrace=decodeScoreTrace(body.scoreTrace??[],payload.video.duration);
@@ -283,10 +303,11 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     const reportPayload:ReportPayload={v:1,kind:'report',video:payload.video,outcome:row.outcome,elapsedSeconds:row.outcome==='held'?payload.video.duration:Number(row.failed_at_seconds??0),issuedAt:now,expiresAt:Number(row.result_expires_at??expiresAt),nonce:randomToken(12),resultRef:id,mode:payload.mode}; const reportToken=await issueReport(reportPayload,env.APP_SIGNING_SECRET); return json({outcome:reportPayload.outcome,elapsedSeconds:reportPayload.elapsedSeconds,reportUrl:`${publicOrigin(request, config)}/report/${encodeURIComponent(reportToken)}`,reportToken,stats:await repo.stats(videoKey(payload.video.bvid,payload.video.cid))});
   }
   if (url.pathname === '/api/manage/result' && request.method === 'POST') {
-    const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); const row=await repo.get(id); const expired=Boolean(row&&(row.state==='completed'?(row.result_expires_at??0)<=now:row.expires_at<=now)); if(expired)await repo.destroy(id);
+    const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); const row=await repo.get(id); const expired=Boolean(row&&row.revoked_at==null&&(row.state==='completed'?(row.result_expires_at??0)<=now:row.expires_at<=now)); if(expired)await repo.purge(id);
     let result: ManageResult;
     if (expired) result={status:'expired'};
     else if (!row) result={status:'unopened'};
+    else if (row.revoked_at != null) result={status:'deleted'};
     else if (row.state !== 'completed') result={status:row.state};
     else {
       const [video,scoreTrace,stats]=await Promise.all([
@@ -298,7 +319,7 @@ async function api(request: Request, env: Env, ctx?: ExecutionContext): Promise<
     }
     return json(result);
   }
-  if (url.pathname === '/api/manage/result' && request.method === 'DELETE') { const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); return json({deleted:await repo.destroy(id)}); }
+  if (url.pathname === '/api/manage/result' && request.method === 'DELETE') { const id=await readManage(bearer(request),env.APP_SIGNING_SECRET); return json({deleted:await repo.destroy(id,now)}); }
   if (url.pathname === '/api/reports/resolve' && request.method === 'POST') { const body=await readJson(request); if(!isRecord(body)||typeof body.reportToken!=='string') return failure('INVALID_INPUT','缺少报告凭证'); const report=await readReport(body.reportToken,env.APP_SIGNING_SECRET,now); return json({report,scoreTrace:report.resultRef?await repo.scoreTrace(report.resultRef,now):[],stats:await repo.stats(videoKey(report.video.bvid,report.video.cid))}); }
   if (url.pathname === '/api/danmaku' && request.method === 'GET') {
     const groupToken = url.searchParams.get('group');

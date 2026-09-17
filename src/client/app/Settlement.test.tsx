@@ -16,8 +16,13 @@ const base = { total: 0, held: 0, failed: 0, failureRate: 0, averageElapsedSecon
 describe('Stats', () => {
   it('shows an explicit empty state without fake bars', () => {
     render(<Stats stats={{ ...base, buckets: [] }} />);
-    expect(screen.getByText(/还没有人记录没绷住的时间/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有完成记录/)).toBeInTheDocument();
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+  });
+
+  it('explains that an empty heatmap can mean everyone held', () => {
+    render(<Stats stats={{ ...base, total: 1, held: 1, averageElapsedSeconds: 12, buckets: [] }} />);
+    expect(screen.getByText('已有 1 次挑战全部绷住，暂无失败时间分布。')).toBeInTheDocument();
   });
 
   it('renders readable time ranges and counts for every bucket', () => {

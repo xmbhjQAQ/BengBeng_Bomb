@@ -44,6 +44,13 @@ class ManageD1 {
   run(statement: ManageStatement) {
     if (statement.query.startsWith('DELETE FROM challenge_score_traces')) return this.traces.delete(String(statement.args[0])) ? 1 : 0;
     if (statement.query.startsWith('DELETE FROM challenge_sessions')) return this.sessions.delete(String(statement.args[0])) ? 1 : 0;
+    if (statement.query.includes('revoked_at=?')) {
+      const id = String(statement.args[1]);
+      const row = this.sessions.get(id);
+      if (!row || row.revoked_at != null) return 0;
+      this.sessions.set(id, { ...row, state: 'completed', started_at: null, completed_at: null, result_expires_at: null, outcome: null, failed_at_seconds: null, revoked_at: Number(statement.args[0]) });
+      return 1;
+    }
     return 0;
   }
 
@@ -130,10 +137,10 @@ describe('private manage result details', () => {
     dbForDelete.traces.set('deleted', { points_json: JSON.stringify([{ timeSeconds: 5, score: 30 }]), expires_at: liveAt });
     const deleteResponse = await manage(dbForDelete, 'deleted', 'DELETE');
     expect((await deleteResponse.json() as { ok: true; data: { deleted: boolean } }).data.deleted).toBe(true);
-    expect(dbForDelete.sessions.has('deleted')).toBe(false);
+    expect(dbForDelete.sessions.get('deleted')?.revoked_at).toBeTypeOf('number');
     expect(dbForDelete.traces.has('deleted')).toBe(false);
     const afterDelete = await manage(dbForDelete, 'deleted');
-    expect((await afterDelete.json() as { ok: true; data: ManageResult }).data).toEqual({ status: 'unopened' });
+    expect((await afterDelete.json() as { ok: true; data: ManageResult }).data).toEqual({ status: 'deleted' });
   });
 
   it('degrades old or malformed rows without catalog/trace details instead of fabricating a curve', async () => {

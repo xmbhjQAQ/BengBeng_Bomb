@@ -6,6 +6,11 @@ export type RateLimitBinding = {
 
 export type RateLimitKind = 'expensive' | 'mutation' | 'public-read';
 
+const FALLBACK_WINDOW_MS = 60_000;
+const FALLBACK_LIMITS: Record<RateLimitKind, number> = { expensive: 20, mutation: 60, 'public-read': 120 };
+const fallbackBuckets = new Map<string, { count: number; resetAt: number }>();
+let missingBindingLogged = false;
+
 function clientAddress(request: Request): string {
   const cloudflare = request.headers.get('CF-Connecting-IP')?.trim();
   if (cloudflare) return cloudflare.slice(0, 128);
@@ -18,17 +23,39 @@ export async function checkRateLimit(
   request: Request,
   kind: RateLimitKind,
 ): Promise<boolean> {
-  if (!binding) return true;
   const url = new URL(request.url);
   const key = await sha256(`${kind}:${request.method}:${url.pathname}:${clientAddress(request)}`);
+  const fallback = () => {
+    const now = Date.now();
+    const current = fallbackBuckets.get(key);
+    if (!current || current.resetAt <= now) {
+      fallbackBuckets.set(key, { count: 1, resetAt: now + FALLBACK_WINDOW_MS });
+    } else {
+      current.count += 1;
+      if (current.count > FALLBACK_LIMITS[kind]) return false;
+    }
+    if (fallbackBuckets.size > 5_000) {
+      for (const [bucketKey, bucket] of fallbackBuckets) {
+        if (bucket.resetAt <= now || fallbackBuckets.size > 4_500) fallbackBuckets.delete(bucketKey);
+        if (fallbackBuckets.size <= 4_500) break;
+      }
+    }
+    return true;
+  };
+  if (!binding) {
+    if (!missingBindingLogged) {
+      missingBindingLogged = true;
+      console.warn('rate_limit_binding_missing_using_isolate_fallback');
+    }
+    return fallback();
+  }
   try {
     const outcome = await binding.limit({ key });
     return outcome.success;
   } catch (error) {
-    // A limiter outage must not turn a normal challenge into a blank page. The
-    // binding itself remains the first line of defence; the request is allowed
-    // through while the failure is observable without logging the IP or token.
+    // Preserve some burst protection without spending D1 writes. This map is
+    // isolate-local and deliberately is not presented as a global limit.
     console.error('rate_limit_check_failed', { kind, name: error instanceof Error ? error.name : 'unknown' });
-    return true;
+    return fallback();
   }
 }

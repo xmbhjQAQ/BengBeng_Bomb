@@ -11,6 +11,7 @@ const friendlyMessages: Record<string, string> = {
   INVALID_SCORE_TRACE: '本次结果的变化记录暂时无法读取，请稍后重试。',
   SCORE_TRACE_TOO_LARGE: '本次结果记录过长，暂时无法读取。',
   INVALID_ATTEMPT: '本轮挑战已经失效，请重新开始。',
+  CHALLENGE_DELETED: '这个挑战已经被发起者删除。',
   INVALID_GROUP_TOKEN: '这个群组挑战链接无效，请重新打开邀请链接。',
   INVALID_GROUP_ENTRY_TOKEN: '这个群组入口链接无效，请重新获取分享链接。',
   INVALID_GROUP_RESULT_TOKEN: '群组结果链接无效或已失效，请重新获取结果链接。',
@@ -28,6 +29,7 @@ const friendlyMessages: Record<string, string> = {
   REQUEST_TIMEOUT: '服务响应有点慢，请稍后重试。',
   REQUEST_ABORTED: '请求已取消。',
   RATE_LIMITED: '操作太频繁了，请稍等一会儿再试。',
+  SHARE_LINK_TOO_LONG: '这个视频的信息过长，暂时无法生成可扫码的分享链接。',
 };
 
 function userMessage(code: string, message: string, path: string): string {
@@ -57,10 +59,28 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     if (callerSignal.aborted) controller.abort();
     else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
   }
-  let response: Response;
   try {
-    response = await fetch(path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.body ? {'Content-Type':'application/json'}:{}), ...options.headers } });
-  } catch {
+    const response = await fetch(path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.body ? {'Content-Type':'application/json'}:{}), ...options.headers } });
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType && !contentType.includes('json')) {
+      throw new ApiClientError('INVALID_RESPONSE', '服务暂时无法响应，请稍后重试。');
+    }
+    let envelope: ApiEnvelope<T>;
+    try {
+      envelope = await response.json() as ApiEnvelope<T>;
+    } catch {
+      if (timedOut) throw new ApiClientError('REQUEST_TIMEOUT', friendlyMessages.REQUEST_TIMEOUT!);
+      if (callerSignal?.aborted) throw new ApiClientError('REQUEST_ABORTED', friendlyMessages.REQUEST_ABORTED!);
+      throw new ApiClientError('INVALID_RESPONSE', '服务暂时无法响应，请稍后重试。');
+    }
+    if (!envelope?.ok) {
+      const error = envelope?.error;
+      const code = error?.code || String(response.status);
+      throw new ApiClientError(code, userMessage(code, error?.message || '', path));
+    }
+    return envelope.data;
+  } catch (error) {
+    if (error instanceof ApiClientError) throw error;
     if (timedOut) throw new ApiClientError('REQUEST_TIMEOUT', friendlyMessages.REQUEST_TIMEOUT!);
     if (callerSignal?.aborted) throw new ApiClientError('REQUEST_ABORTED', friendlyMessages.REQUEST_ABORTED!);
     throw new ApiClientError('NETWORK_ERROR', '暂时无法连接服务，请检查网络后重试。');
@@ -68,21 +88,5 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     globalThis.clearTimeout(timeout);
     callerSignal?.removeEventListener('abort', abortFromCaller);
   }
-  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (contentType && !contentType.includes('json')) {
-    throw new ApiClientError('INVALID_RESPONSE', '服务暂时无法响应，请稍后重试。');
-  }
-  let envelope: ApiEnvelope<T>;
-  try {
-    envelope = await response.json() as ApiEnvelope<T>;
-  } catch {
-    throw new ApiClientError('INVALID_RESPONSE', '服务暂时无法响应，请稍后重试。');
-  }
-  if (!envelope?.ok) {
-    const error = envelope?.error;
-    const code = error?.code || String(response.status);
-    throw new ApiClientError(code, userMessage(code, error?.message || '', path));
-  }
-  return envelope.data;
 }
 export const post = <T>(path:string,body:unknown,token?:string) => apiRequest<T>(path,{method:'POST',body:JSON.stringify(body),headers:token?{Authorization:`Bearer ${token}`}:{}});

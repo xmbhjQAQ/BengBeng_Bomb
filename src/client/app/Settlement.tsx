@@ -104,6 +104,11 @@ export function Settlement({
 
 export function Stats({ stats }: { stats: AggregateStats }) {
   const bars = createHeatmapBars(stats.buckets);
+  const emptyHeatmapText = stats.total === 0
+    ? '还没有完成记录，来做第一位挑战者。'
+    : stats.failed === 0
+      ? `已有 ${stats.total} 次挑战全部绷住，暂无失败时间分布。`
+      : '已有失败记录，但暂时没有可显示的失败时间分布。';
   return (
     <section className="section">
       <h2>大家的挑战情况</h2>
@@ -127,7 +132,7 @@ export function Stats({ stats }: { stats: AggregateStats }) {
             ))}
           </div>
         </div>
-      ) : <p className="muted heatmap-empty">还没有人记录没绷住的时间，你是第一批挑战者。</p>}
+      ) : <p className="muted heatmap-empty">{emptyHeatmapText}</p>}
     </section>
   );
 }

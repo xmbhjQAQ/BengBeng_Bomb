@@ -189,7 +189,7 @@ export class GroupRepository {
     return this.sessions.upsertVideo(videoKey, video, now);
   }
 
-  async resultQuery(groupId: string, now: number, limit: number, cursor?: string): Promise<GroupResultQuery> {
+  async resultQuery(groupId: string, now: number, limit: number, cursor?: string, summary?: GroupResultSummary): Promise<GroupResultQuery> {
     const safeLimit = Math.max(1, Math.min(GROUP_RESULTS_MAX_LIMIT, Math.floor(limit)));
     const decoded = cursor ? decodeCursor(cursor) : undefined;
     const cursorClause = decoded ? ` AND (completed_at<? OR (completed_at=? AND attempt_id>?))` : '';
@@ -205,7 +205,7 @@ export class GroupRepository {
     return {
       rows: pageRows.map(toParticipantResult),
       ...(hasMore && last ? { nextCursor: encodeCursor({ completedAt: last.completed_at, attemptId: last.attempt_id }) } : {}),
-      summary: await this.resultSummary(groupId, now),
+      summary: summary ?? await this.resultSummary(groupId, now),
     };
   }
 
@@ -295,8 +295,9 @@ export class GroupRepository {
     now: number;
     limit: number;
     cursor?: string;
+    summary?: GroupResultSummary;
   }): Promise<GroupResultsPage> {
-    const page = await this.resultQuery(input.group.group_id, input.now, input.limit, input.cursor);
+    const page = await this.resultQuery(input.group.group_id, input.now, input.limit, input.cursor, input.summary);
     // Keep the result window readable after the participation window closes.
     // The parent row remains active until retention cleanup, but its public
     // state must tell readers that no new attempts can start.

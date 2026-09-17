@@ -45,6 +45,13 @@ class FakeD1 {
   }
   run(statement: FakeStatement) {
     if (statement.query.startsWith('DELETE FROM challenge_score_traces')) return this.traces.delete(String(statement.args[0])) ? 1 : 0;
+    if (statement.query.includes('revoked_at=?')) {
+      const id = String(statement.args[1]);
+      const row = this.sessions.get(id);
+      if (!row || row.revoked_at != null) return 0;
+      this.sessions.set(id, { ...row, state: 'completed', started_at: null, completed_at: null, result_expires_at: null, outcome: null, failed_at_seconds: null, revoked_at: Number(statement.args[0]) });
+      return 1;
+    }
     if (!statement.query.startsWith('UPDATE challenge_sessions SET state')) return 0;
     const id = String(statement.args[4]);
     const row = this.sessions.get(id);
@@ -142,7 +149,7 @@ describe('SessionRepository aggregate buckets', () => {
     await repository.complete({id:'trace',outcome:'failed',elapsed:14,now:101,resultExpiresAt:300,bucketSize:10,scoreTrace:[{timeSeconds:2,score:99}]});
     expect(await repository.scoreTrace('trace',150)).toEqual([{timeSeconds:1,score:42}]);
     expect(db.traces.get('trace')?.expires_at).toBe(200);
-    expect(await repository.destroy('trace')).toBe(true);expect(db.traces.has('trace')).toBe(false);expect(db.sessions.has('trace')).toBe(false);
+    expect(await repository.destroy('trace',150)).toBe(true);expect(db.traces.has('trace')).toBe(false);expect(db.sessions.get('trace')?.revoked_at).toBe(150);
   });
   it('deletes an expired trace on read',async()=>{const db=new FakeD1();db.traces.set('old',{points_json:'[]',expires_at:100});const repository=new SessionRepository(db as unknown as D1Database);expect(await repository.scoreTrace('old',100)).toEqual([]);expect(db.traces.has('old')).toBe(false);});
   it('matches the bearer after completion and rejects a different bearer', async () => {

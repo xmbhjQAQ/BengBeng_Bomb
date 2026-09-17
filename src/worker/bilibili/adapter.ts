@@ -18,7 +18,7 @@ const normalizeInputUrl = (url: URL) => {
 
 export type BilibiliInput =
   | { kind: 'bvid'; bvid: string; raw: string }
-  | { kind: 'url'; url: string; raw: string; bvid?: string };
+  | { kind: 'url'; url: string; raw: string; bvid?: string; page?: number };
 
 /**
  * Validate the creator input before it is ever forwarded to bilidirect.
@@ -60,7 +60,17 @@ export function parseBilibiliInput(input: string): BilibiliInput {
 
   const match = url.pathname.match(/^\/video\/(BV[0-9A-Za-z]{10,})(?:\/|$)/i);
   if (!match) throw new UpstreamError(400, '链接里没有找到视频，请检查后重试。');
-  return { kind: 'url', url: normalizeInputUrl(url), raw, bvid: match[1] };
+  const rawPage = url.searchParams.get('p');
+  if (rawPage !== null && (!/^\d+$/.test(rawPage) || Number(rawPage) < 1 || Number(rawPage) > 10_000)) {
+    throw new UpstreamError(400, '视频分P编号不正确，请检查链接后重试。');
+  }
+  return {
+    kind: 'url',
+    url: normalizeInputUrl(url),
+    raw,
+    bvid: match[1],
+    ...(rawPage === null ? {} : { page: Number(rawPage) }),
+  };
 }
 
 /**
@@ -123,17 +133,17 @@ async function fetchWithRetry(
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       if (lastRetryableError) throw lastRetryableError;
-      if (lastRetryableResponse) return lastRetryableResponse;
+      if (lastRetryableResponse) return { response: lastRetryableResponse, deadline };
       throw new UpstreamError(504, '视频服务响应超时，请稍后重试。');
     }
 
     try {
       const response = await fetchWithTimeout(input, init, remainingMs, fetchImpl);
-      if (!RETRYABLE_UPSTREAM_STATUSES.has(response.status) || attempt === maxRetries) return response;
+      if (!RETRYABLE_UPSTREAM_STATUSES.has(response.status) || attempt === maxRetries) return { response, deadline };
       lastRetryableResponse = response;
       await cancelResponseBody(response);
       const waitMs = deadline - Date.now();
-      if (waitMs <= UPSTREAM_RETRY_DELAY_MS) return response;
+      if (waitMs <= UPSTREAM_RETRY_DELAY_MS) return { response, deadline };
       await sleepImpl(UPSTREAM_RETRY_DELAY_MS);
     } catch (error) {
       if (!isRetryableTransportError(error) || attempt === maxRetries) throw error;
@@ -145,14 +155,29 @@ async function fetchWithRetry(
   }
 
   if (lastRetryableError) throw lastRetryableError;
-  if (lastRetryableResponse) return lastRetryableResponse;
+  if (lastRetryableResponse) return { response: lastRetryableResponse, deadline };
   throw new UpstreamError(504, '视频服务响应超时，请稍后重试。');
 }
-async function readLimitedText(response: Response, maximumBytes: number) {
+async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) throw new UpstreamError(504, '视频服务响应超时，请稍后重试。');
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new UpstreamError(504, '视频服务响应超时，请稍后重试。')), remainingMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+async function readLimitedText(response: Response, maximumBytes: number, deadline: number) {
   const declaredLength = Number(response.headers.get('content-length') || 0);
   if (declaredLength > maximumBytes) throw new UpstreamError(502, '视频服务返回内容过大，请稍后重试。');
   if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await withDeadline(response.arrayBuffer(), deadline));
     if (bytes.byteLength > maximumBytes) throw new UpstreamError(502, '视频服务返回内容过大，请稍后重试。');
     return new TextDecoder().decode(bytes);
   }
@@ -161,7 +186,7 @@ async function readLimitedText(response: Response, maximumBytes: number) {
   let total = 0;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await withDeadline(reader.read(), deadline);
       if (done) break;
       total += value.byteLength;
       if (total > maximumBytes) {
@@ -170,6 +195,9 @@ async function readLimitedText(response: Response, maximumBytes: number) {
       }
       chunks.push(value);
     }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
   } finally {
     reader.releaseLock();
   }
@@ -198,15 +226,16 @@ const resolveInput = (input: BilibiliResolveInput): BilibiliInput => {
 
 export async function resolveBilibili(input: BilibiliResolveInput, page: number, config: WorkerConfig, apiKey: string, fetchImpl: typeof fetch = fetch, sleepImpl: Sleep = sleep): Promise<PlaybackData> {
   const parsed = resolveInput(input);
+  const requestedPage = parsed.kind === 'url' && parsed.page ? parsed.page : page;
   const requestBody = {
     ...(parsed.kind === 'bvid' || parsed.bvid ? { bvid: parsed.bvid } : { url: parsed.url }),
-    page,
+    page: requestedPage,
     qn: config.qn,
     fnval: 0,
     fourk: 1,
     probe: 1,
   };
-  const response = await fetchWithRetry(`${config.baseUrl}/api/parse`, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(apiKey ? { 'X-API-Key': apiKey } : {}) }, body: JSON.stringify(requestBody) }, timeoutFor(config), retriesFor(config), fetchImpl, sleepImpl);
+  const { response, deadline } = await fetchWithRetry(`${config.baseUrl}/api/parse`, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(apiKey ? { 'X-API-Key': apiKey } : {}) }, body: JSON.stringify(requestBody) }, timeoutFor(config), retriesFor(config), fetchImpl, sleepImpl);
   if (!response.ok) {
     await cancelResponseBody(response);
     throw new UpstreamError(response.status, '视频解析失败，请稍后重试。');
@@ -216,14 +245,14 @@ export async function resolveBilibili(input: BilibiliResolveInput, page: number,
     await cancelResponseBody(response);
     throw new UpstreamError(502, '视频服务返回格式异常，请稍后重试。');
   }
-  let body: unknown; try { body = JSON.parse(await readLimitedText(response, jsonLimitFor(config))); } catch (error) { await cancelResponseBody(response); if (error instanceof UpstreamError) throw error; throw new UpstreamError(502, '视频服务暂时没有响应，请稍后重试。'); }
+  let body: unknown; try { body = JSON.parse(await readLimitedText(response, jsonLimitFor(config), deadline)); } catch (error) { await cancelResponseBody(response); if (error instanceof UpstreamError) throw error; throw new UpstreamError(502, '视频服务暂时没有响应，请稍后重试。'); }
   if (!response.ok || !isRecord(body) || body.ok === false || !isRecord(body.data)) throw new UpstreamError(response.status >= 400 ? response.status : 502, '视频解析失败，请稍后重试。');
   const data = body.data;
   const videoObject = isRecord(data.video) ? data.video : {};
   const media: string[] = []; collectUrls(data.directUrl, media); collectUrls(data.playback, media); collectUrls(data.durl, media);
   if (!media.length) throw new UpstreamError(502, '视频暂时无法播放，请稍后重试。');
   try {
-    const metadata: VideoMetadata = decodeVideoMetadata({ bvid: data.bvid ?? parsed.bvid ?? '', cid: data.cid, page: data.page ?? page, title: data.title ?? videoObject.title, description: data.description ?? videoObject.desc ?? '', cover: secureUrl(data.cover ?? data.pic ?? videoObject.pic), duration: data.duration ?? videoObject.duration });
+    const metadata: VideoMetadata = decodeVideoMetadata({ bvid: data.bvid ?? parsed.bvid ?? '', cid: data.cid, page: data.page ?? requestedPage, title: data.title ?? videoObject.title, description: data.description ?? videoObject.desc ?? '', cover: secureUrl(data.cover ?? data.pic ?? videoObject.pic), duration: data.duration ?? videoObject.duration });
     // Deliberately project only the stable playback contract. The upstream
     // `source` diagnostic includes the resolved short URL and must not escape
     // into a ticket, D1 row, or public result.
@@ -234,7 +263,7 @@ export async function resolveBilibili(input: BilibiliResolveInput, page: number,
 }
 export async function fetchDanmaku(cid: number, bvid: string, config: WorkerConfig, apiKey: string, fetchImpl: typeof fetch = fetch, sleepImpl: Sleep = sleep) {
   const url = new URL(`${config.baseUrl}/api/danmaku`); url.searchParams.set('cid', String(cid)); url.searchParams.set('bvid', bvid);
-  const response = await fetchWithRetry(url, { headers: { Accept: 'text/xml', ...(apiKey ? { 'X-API-Key': apiKey } : {}) } }, timeoutFor(config), retriesFor(config), fetchImpl, sleepImpl);
+  const { response, deadline } = await fetchWithRetry(url, { headers: { Accept: 'text/xml', ...(apiKey ? { 'X-API-Key': apiKey } : {}) } }, timeoutFor(config), retriesFor(config), fetchImpl, sleepImpl);
   if (!response.ok) {
     await cancelResponseBody(response);
     throw new UpstreamError(response.status, '弹幕加载失败');
@@ -244,5 +273,5 @@ export async function fetchDanmaku(cid: number, bvid: string, config: WorkerConf
     await cancelResponseBody(response);
     throw new UpstreamError(502, '弹幕服务返回格式异常，请稍后重试。');
   }
-  try { return await readLimitedText(response, textLimitFor(config)); } catch (error) { await cancelResponseBody(response); if (error instanceof UpstreamError) throw error; throw new UpstreamError(502, '弹幕加载失败'); }
+  try { return await readLimitedText(response, textLimitFor(config), deadline); } catch (error) { await cancelResponseBody(response); if (error instanceof UpstreamError) throw error; throw new UpstreamError(502, '弹幕加载失败'); }
 }

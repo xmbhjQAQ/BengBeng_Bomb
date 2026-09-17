@@ -13,6 +13,7 @@ export function PublicQrCode({ url, label, size = 176 }: { url: string; label: s
     void QRCode.toDataURL(url, {
       width: size,
       margin: 2,
+      errorCorrectionLevel: 'M',
       color: { dark: '#251b2b', light: '#ffffff' },
     }).then((value) => {
       if (!cancelled) setSource(value);
