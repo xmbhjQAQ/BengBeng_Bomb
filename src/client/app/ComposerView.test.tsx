@@ -36,6 +36,15 @@ describe('ComposerView links', () => {
     });
   });
 
+  it('extracts a Bilibili URL from a mobile share message before parsing', async () => {
+    mocks.post.mockResolvedValueOnce(parsed);
+    render(<ComposerView />);
+    fireEvent.change(screen.getByLabelText('B站视频链接'), { target: { value: '【传统的搬💩方式真是弱！爆！了！绷绷炸弹】 https://b23.tv/yGjCtKD' } });
+    fireEvent.click(screen.getByRole('button', { name: '解析视频' }));
+    await screen.findByText('测试视频');
+    expect(mocks.post).toHaveBeenCalledWith('/api/bilibili/parse', { input: 'https://b23.tv/yGjCtKD' });
+  });
+
   it('prefills and updates the shared preferred nickname', async () => {
     rememberPreferredNickname('上次昵称');
     mocks.post.mockResolvedValueOnce(parsed).mockResolvedValueOnce({

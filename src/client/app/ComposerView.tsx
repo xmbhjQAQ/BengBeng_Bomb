@@ -28,6 +28,23 @@ interface Created {
 }
 
 type ShareImageStatus = 'idle' | 'generating' | 'ready' | 'error';
+const BILIBILI_HOSTS = new Set(['bilibili.com', 'www.bilibili.com', 'm.bilibili.com', 'b23.tv']);
+
+function normalizeBilibiliShareInput(value: string) {
+  const raw = value.trim();
+  if (!raw) return raw;
+  const candidates = raw.match(/https?:\/\/[^\s<>"'`]+/giu) ?? [];
+  const urls = candidates.map((candidate) => candidate.replace(/[)\]}>{},，。！？；：、"'’”]+$/gu, '')).filter((candidate) => {
+    try {
+      return BILIBILI_HOSTS.has(new URL(candidate).hostname.toLowerCase());
+    } catch {
+      return false;
+    }
+  });
+  const uniqueUrls = [...new Set(urls)];
+  if (uniqueUrls.length > 1) throw new Error('检测到多个 B 站链接，请只保留一个。');
+  return uniqueUrls[0] ?? raw;
+}
 
 export function ComposerView({ embedded = false, prefill }: { embedded?: boolean; prefill?: ParsedVideo | null }) {
   const [input, setInput] = useState(readSession('forward-video') || '');
@@ -57,7 +74,7 @@ export function ComposerView({ embedded = false, prefill }: { embedded?: boolean
     setBusy(true);
     setError('');
     try {
-      setParsed(await post<ParsedVideo>('/api/bilibili/parse', { input: value }));
+      setParsed(await post<ParsedVideo>('/api/bilibili/parse', { input: normalizeBilibiliShareInput(value) }));
       setCreated(null);
       if (clearForward || value === input) removeSession('forward-video');
     } catch (reason) {
