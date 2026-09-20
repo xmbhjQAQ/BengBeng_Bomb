@@ -1,5 +1,6 @@
 import { decodeVideoMetadata, isRecord, type PlaybackData, type VideoMetadata } from '../../shared/contracts';
 import type { WorkerConfig } from '../config';
+import { CLIENT_CONFIG } from '../../shared/config/client';
 
 export class UpstreamError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -84,6 +85,14 @@ export function parseDirectBvid(input: string) {
   throw new UpstreamError(400, '短链接可以直接粘贴，无需先打开。');
 }
 const secureUrl = (value: unknown) => { const raw = String(value ?? '').trim().replace(/^http:\/\//i, 'https://'); if (!raw) return ''; try { const url = new URL(raw.startsWith('//') ? `https:${raw}` : raw); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } };
+const clampText = (value: unknown, maxLength: number) => {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (text.length <= maxLength) return text;
+  let clipped = text.slice(0, Math.max(0, maxLength - 1));
+  if (/^[\uD800-\uDBFF]$/.test(clipped.slice(-1))) clipped = clipped.slice(0, -1);
+  return `${clipped}…`;
+};
 const collectUrls = (value: unknown, output: string[]) => {
   if (typeof value === 'string') { const normalized = secureUrl(value); if (normalized) output.push(normalized); return; }
   if (Array.isArray(value)) { value.forEach((item) => collectUrls(item, output)); return; }
@@ -252,7 +261,7 @@ export async function resolveBilibili(input: BilibiliResolveInput, page: number,
   const media: string[] = []; collectUrls(data.directUrl, media); collectUrls(data.playback, media); collectUrls(data.durl, media);
   if (!media.length) throw new UpstreamError(502, '视频暂时无法播放，请稍后重试。');
   try {
-    const metadata: VideoMetadata = decodeVideoMetadata({ bvid: data.bvid ?? parsed.bvid ?? '', cid: data.cid, page: data.page ?? requestedPage, title: data.title ?? videoObject.title, description: data.description ?? videoObject.desc ?? '', cover: secureUrl(data.cover ?? data.pic ?? videoObject.pic), duration: data.duration ?? videoObject.duration });
+    const metadata: VideoMetadata = decodeVideoMetadata({ bvid: data.bvid ?? parsed.bvid ?? '', cid: data.cid, page: data.page ?? requestedPage, title: clampText(data.title ?? videoObject.title, CLIENT_CONFIG.limits.title), description: clampText(data.description ?? videoObject.desc ?? '', CLIENT_CONFIG.limits.description), cover: secureUrl(data.cover ?? data.pic ?? videoObject.pic), duration: data.duration ?? videoObject.duration });
     // Deliberately project only the stable playback contract. The upstream
     // `source` diagnostic includes the resolved short URL and must not escape
     // into a ticket, D1 row, or public result.

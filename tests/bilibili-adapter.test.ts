@@ -141,6 +141,15 @@ describe('creator input parsing',()=>{
     cases.forEach((input)=>expect(()=>parseBilibiliInput(input)).toThrow());
   });
 
+  it('truncates oversized upstream metadata without rejecting a valid short link',async()=>{
+    const longDescription='简介'.repeat(200);
+    const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({ok:true,data:{bvid:'BV1B7411m7LV',cid:123,page:1,title:'测试'.repeat(100),description:longDescription,duration:60,directUrl:'https://cdn.example/video.mp4'}}),{status:200,headers:{'Content-Type':'application/json'}}));
+    const result=await resolveBilibili('https://b23.tv/7WpblY1',1,config,'key',fetchImpl as typeof fetch);
+    expect(result.title.length).toBeLessThanOrEqual(120);
+    expect(result.description.length).toBeLessThanOrEqual(180);
+    expect(result.description.endsWith('…')).toBe(true);
+  });
+
   it('rejects a short-link response without a canonical BV id',async()=>{
     const fetchImpl=vi.fn(async()=>new Response(JSON.stringify({ok:true,data:{cid:123,page:1,title:'测试',description:'简介',duration:60,directUrl:'https://cdn.example/video.mp4'}}),{status:200,headers:{'Content-Type':'application/json'}}));
     await expect(resolveBilibili('https://b23.tv/7WpblY1',1,config,'key',fetchImpl as typeof fetch)).rejects.toMatchObject({status:502});
