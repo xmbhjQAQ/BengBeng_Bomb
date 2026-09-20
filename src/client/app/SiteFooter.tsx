@@ -11,7 +11,12 @@ export function SiteFooter() {
           Github
         </a>
       </p>
-      <p className="site-footer-analytics">本站使用匿名统计技术以提升用户体验</p>
+      <p>
+        看看别的：{' '}
+        <a href="https://femboy.test.nagisa.icu" target="_blank" rel="noopener noreferrer">
+          男娘测试
+        </a>
+      </p>
     </footer>
   );
 }
